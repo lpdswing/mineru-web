@@ -92,6 +92,7 @@ docker-compose -f docker-compose.yml -f docker-compose.sglang.yaml up -d
 https://min.io/docs/minio/linux/reference/minio-mc.html
 
 # 添加minio的alias
+# 更新minio镜像后非必须，可以从页面吧mds设为public
 mc alias set local http://localhost:9000 minioadmin minioadmin
 
 # 设置mds桶为public
@@ -173,6 +174,18 @@ mineru-web/
 本项目采用 AGPL-3.0 协议开源，详情请参见 [LICENSE](LICENSE) 文件。
 
 ## 📝 更新日志
+
+### [2.2.2] - 2025-09-18
+
+- 后端
+  - 适配mineru2.2.2版本
+  - 删除无用依赖
+  - 增加文件解析时间信息
+  - 更新docker base镜像
+
+- 前端
+  - 文件列表页增加批量删除功能
+  - 增加解析开始结束时间展示
 
 ### [2.0.0] - 2025-07-07
 - 后端
