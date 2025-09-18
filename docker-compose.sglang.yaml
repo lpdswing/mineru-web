@@ -3,7 +3,7 @@ services:
 # Documentation:
 # https://docs.sglang.ai/backend/server_arguments.html#common-launch-commands
   mineru-sglang:
-    image: lpdswing/mineru-web-backend:v2.1.9
+    image: lpdswing/mineru-web-backend:v2.2.2
     container_name: mineru-sglang
     restart: always
     ports:
