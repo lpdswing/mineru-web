@@ -4,6 +4,9 @@
       <div class="files-header">
         <span class="files-title">文件列表</span>
         <div class="files-header-actions">
+          <el-button type="danger" size="large" class="batch-delete-btn" @click="handleBatchDelete" :disabled="!multipleSelection.length" plain>
+            <el-icon><Delete /></el-icon> 批量删除
+          </el-button>
           <el-dropdown @command="handleBatchExport" :disabled="!multipleSelection.length">
             <el-button type="info" size="large" class="batch-export-btn" :loading="batchExporting" plain>
               <el-icon><i class="el-icon-download" /></el-icon> 批量导出 <el-icon><i class="el-icon-arrow-down" /></el-icon>
@@ -63,6 +66,12 @@
         <el-table-column prop="uploadTime" label="创建时间" width="180">
           <template #default="{ row }">{{ formatDateTime(row.upload_time) }}</template>
         </el-table-column>
+        <el-table-column prop="start_at" label="开始时间" width="180">
+          <template #default="{ row }">{{ formatDateTime(row.start_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="finish_at" label="结束时间" width="180">
+          <template #default="{ row }">{{ formatDateTime(row.finish_at) }}</template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
@@ -118,7 +127,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
-import { Upload } from '@element-plus/icons-vue'
+import { Upload, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
@@ -133,6 +142,8 @@ interface FileItem {
   uploadTime: string
   status: 'pending' | 'parsing' | 'parsed' | 'parse_failed'
   backend?: string  // 添加backend字段
+  start_at?: string  // 开始时间
+  finish_at?: string // 结束时间
 }
 
 const files = ref<FileItem[]>([])
@@ -407,6 +418,55 @@ const downloadFile = async (file: FileItem) => {
   }
 }
 
+const handleBatchDelete = async () => {
+  if (!multipleSelection.value.length || batchExporting.value) return
+  
+  ElMessageBox.confirm(
+    `确定要删除选中的 ${multipleSelection.value.length} 个文件吗？`,
+    '批量删除确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  ).then(async () => {
+    batchExporting.value = true
+    const failedFiles: string[] = []
+    
+    try {
+      // 并发删除所有选中的文件
+      const deletePromises = multipleSelection.value.map(async (file) => {
+        try {
+          await axios.delete(`/api/files/${file.id}`, {
+            headers: { 'X-User-Id': getUserId() }
+          })
+        } catch (e) {
+          failedFiles.push(file.filename)
+          console.error(`删除文件 ${file.filename} 失败:`, e)
+        }
+      })
+      
+      await Promise.all(deletePromises)
+      
+      if (failedFiles.length === 0) {
+        ElMessage.success(`成功删除 ${multipleSelection.value.length} 个文件`)
+      } else if (failedFiles.length < multipleSelection.value.length) {
+        ElMessage.warning(`成功删除 ${multipleSelection.value.length - failedFiles.length} 个文件，${failedFiles.length} 个文件删除失败`)
+      } else {
+        ElMessage.error('所有文件删除失败')
+      }
+      
+      // 重新加载文件列表
+      fetchFiles()
+    } catch (e) {
+      console.error('批量删除失败:', e)
+      ElMessage.error('批量删除操作失败')
+    } finally {
+      batchExporting.value = false
+    }
+  }).catch(() => {})
+}
+
 const handleBatchExport = async (format: ExportFormat) => {
   if (!multipleSelection.value.length || batchExporting.value) return
   
@@ -551,6 +611,10 @@ watch([() => params.page, () => params.pageSize], () => {
   align-items: center;
 }
 .batch-export-btn {
+  border-radius: 8px;
+  font-size: 1.05rem;
+}
+.batch-delete-btn {
   border-radius: 8px;
   font-size: 1.05rem;
 }
