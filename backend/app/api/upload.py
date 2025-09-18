@@ -1,6 +1,5 @@
 import traceback
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from sqlalchemy.orm import Session
 from app.models.file import File as FileModel, FileStatus, BackendType as FileBackendType
 from app.models.settings import Settings, BackendType
 from app.utils.minio_client import upload_file

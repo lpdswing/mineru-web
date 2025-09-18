@@ -1,6 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum
+from sqlalchemy import Column, Integer, String, Boolean, Enum
 from app.models.base import Base
-from datetime import datetime
 import enum
 
 class BackendType(enum.Enum):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Enum
 from sqlalchemy.sql import func
 from app.models.base import Base
 from datetime import datetime
@@ -29,6 +29,8 @@ class File(Base):
     backend = Column(Enum(BackendType), default=BackendType.PIPELINE)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    start_at = Column(DateTime(timezone=True), nullable=True)
+    finish_at = Column(DateTime(timezone=True), nullable=True)
 
     def to_dict(self):
         return {
@@ -41,5 +43,7 @@ class File(Base):
             'minio_path': self.minio_path,
             'content_type': self.content_type,
             'version': self.version,
-            'backend': self.backend.value if self.backend else BackendType.PIPELINE.value
+            'backend': self.backend.value if self.backend else BackendType.PIPELINE.value,
+            'start_at': self.start_at.isoformat() if self.start_at else None,
+            'finish_at': self.finish_at.isoformat() if self.finish_at else None
         }

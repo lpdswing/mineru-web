@@ -1,4 +1,4 @@
-FROM lmsysorg/sglang:v0.4.9.post6-cu126
+FROM lmsysorg/sglang:v0.4.10.post2-cu126
 # For blackwell GPU, use the following line instead:
 # FROM lmsysorg/sglang:v0.4.9.post6-cu128-b200
 

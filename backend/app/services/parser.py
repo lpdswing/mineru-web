@@ -4,6 +4,7 @@ import sys
 import json
 import re
 import copy
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from loguru import logger
@@ -346,6 +347,7 @@ class ParserService:
             backend = settings.get("backend", "pipeline")
             # 更新文件状态为解析中
             file.status = FileStatus.PARSING
+            file.start_at = datetime.now()
             self.db.commit()
 
             # 从MinIO获取文件
@@ -405,6 +407,7 @@ class ParserService:
 
                 # 更新文件状态为已解析
                 file.status = FileStatus.PARSED
+                file.finish_at = datetime.now()
                 self.db.commit()
 
                 return {
