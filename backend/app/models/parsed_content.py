@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey
 from app.models.base import Base
-from datetime import datetime
 
 class ParsedContent(Base):
     __tablename__ = 'parsed_contents'

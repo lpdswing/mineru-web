@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from ..services.stats import StatsService

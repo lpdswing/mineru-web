@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, Depends, Body
-from sqlalchemy.orm import Session
 from app.models.settings import Settings, BackendType
 from app.utils.user_dep import get_user_id
 from sqlalchemy import create_engine

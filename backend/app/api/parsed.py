@@ -1,15 +1,12 @@
 import traceback
-from fastapi import APIRouter, Query, HTTPException, Body, Response, Depends, Request
-from sqlalchemy import create_engine, and_
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.parsed_content import ParsedContent
 from app.models.file import File as FileModel, FileStatus
 from app.services.parser import ParserService
-from app.utils.minio_client import minio_client, MINIO_BUCKET
+from app.utils.minio_client import minio_client
 from app.utils.user_dep import get_user_id
 import os
-import io
-import json
 from pathlib import Path
 from app.services.parser import get_buckets
 
