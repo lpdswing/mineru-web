@@ -50,9 +50,9 @@
         <el-form-item label="后端引擎">
           <el-select v-model="settings.backend" class="settings-select">
             <el-option label="Pipeline" value="pipeline" />
-            <el-option label="VLM Transformers" value="vlm-transformers" />
-            <el-option label="VLM SgLang Engine" value="vlm-sglang-engine" />
-            <el-option label="VLM SgLang Client" value="vlm-sglang-client" />
+            <!-- <el-option label="VLM Transformers" value="vlm-transformers" /> -->
+            <!-- <el-option label="VLM SgLang Engine" value="vlm-sglang-engine" /> -->
+            <el-option label="VLM Vllm Client" value="vlm-vllm-client" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -76,7 +76,8 @@ interface Settings {
   formulaRecognition: boolean
   tableRecognition: boolean
   version: string
-  backend: 'pipeline' | 'vlm-transformers' | 'vlm-sglang-engine' | 'vlm-sglang-client'
+  // backend: 'pipeline' | 'vlm-transformers' | 'vlm-sglang-engine' | 'vlm-sglang-client'
+  backend: 'pipeline' | 'vlm-vllm-client'
 }
 
 const defaultSettings: Settings = {

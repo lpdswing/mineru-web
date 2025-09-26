@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: lpdswing/mineru-web-frontend:v2.2.2
+    image: lpdswing/mineru-web-frontend:v2.5.4
     ports:
       - "8088:80"
     depends_on:
@@ -10,7 +10,7 @@ services:
       - mineru-network
 
   backend:
-    image: lpdswing/mineru-web-backend:v2.2.2
+    image: lpdswing/mineru-web-backend:v2.5.4
     deploy:
       resources:
         reservations:
@@ -23,9 +23,9 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - DATABASE_URL=sqlite:///./mineru.db
       # 按需配置
-      - BACKEND=sglang-client  # 只能用client，uvicorn无法在子进程加载vlm模型
+      - BACKEND=vllm-client  # 只能用client，uvicorn无法在子进程加载vlm模型
       # - MODEL_PATH=/models/vlm
-      - SERVER_URL=http://mineru-sglang:30000
+      - SERVER_URL=http://mineru-vllm-server:30000
     volumes:
       - ./backend:/app
       - ./mineru.json:/root/mineru.json
@@ -35,13 +35,13 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      mineru-sglang:
+      mineru-vllm-server:
         condition: service_healthy
     networks:
       - mineru-network
 
   worker:
-    image: lpdswing/mineru-web-backend:v2.2.2
+    image: lpdswing/mineru-web-backend:v2.5.4
     deploy:
       resources:
         reservations:
@@ -55,7 +55,7 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - DATABASE_URL=sqlite:///./mineru.db
       # 按需配置
-      - SERVER_URL=http://mineru-sglang:30000  # sglang server服务地址
+      - SERVER_URL=http://mineru-vllm-server:30000  # sglang server服务地址
 
     volumes:
       - ./backend:/app
@@ -66,7 +66,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      mineru-sglang:
+      mineru-vllm-server:
         condition: service_healthy
     networks:
       - mineru-network
