@@ -1,6 +1,4 @@
-FROM lmsysorg/sglang:v0.4.10.post2-cu126
-# For blackwell GPU, use the following line instead:
-# FROM lmsysorg/sglang:v0.4.9.post6-cu128-b200
+FROM vllm/vllm-openai:v0.10.1.1
 
 # Install libgl for opencv support & Noto fonts for Chinese characters
 RUN apt-get update && \

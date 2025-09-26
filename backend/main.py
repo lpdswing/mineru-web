@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from mineru.cli.fast_api import parse_pdf
 
 
-BACKEND = os.environ.get("BACKEND", "sglang-client")
+BACKEND = os.environ.get("BACKEND", "vllm-client")
 MODEL_PATH = os.environ.get("MODEL_PATH", "/models/vlm")
 SERVER_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:30000")
 PRELOAD_MODEL = os.environ.get("PRELOAD_MODEL", False)

@@ -37,6 +37,12 @@ const isSettingsPage = () => route.path === '/settings'
       </nav>
       <div class="sidebar-bottom">
         <el-icon class="sidebar-icon" :class="{active: isSettingsPage()}" @click="router.push('/settings')" title="设置"><Setting /></el-icon>
+        <a href="https://github.com/lpdswing/Mineru-Web" target="_blank" rel="noopener noreferrer" class="github-link" title="GitHub">
+          <img src="/github-logo.svg" alt="GitHub" width="22" height="22" />
+        </a>
+        <div class="version-info">
+          mineru-2.5.4
+        </div>
       </div>
     </aside>
 
@@ -122,6 +128,21 @@ const isSettingsPage = () => route.path === '/settings'
 }
 .sidebar-icon:hover, .sidebar-icon.active {
   color: #409eff;
+}
+.github-link {
+  margin-top: -8px;
+  opacity: 0.65;
+  transition: opacity 0.2s;
+}
+.github-link:hover {
+  opacity: 1;
+}
+.version-info {
+  text-align: center;
+  font-size: 12px;
+  color: #b1b3b8;
+  margin-top: -12px;
+  transform: scale(0.9);
 }
 .main-area {
   flex: 1;

@@ -119,7 +119,7 @@ class ParserService:
             parse_method="auto",  # The method for parsing PDF, default is 'auto'
             p_formula_enable=True,  # Enable formula parsing
             p_table_enable=True,  # Enable table parsing
-            server_url=None,  # Server URL for vlm-sglang-client backend
+            server_url=None,  # Server URL for vlm-vllm-client backend
             f_dump_md=True,  # Whether to dump markdown files
             f_dump_middle_json=True,  # Whether to dump middle JSON files
             f_dump_model_output=True,  # Whether to dump model output files
@@ -291,7 +291,7 @@ class ParserService:
             image_writer: 图片写入器
             md_writer: markdown写入器
             backend: 解析后端
-            server_url: 当backend是 `sglang-client`时候, 需指定, 例如:`http://127.0.0.1:30000`
+            server_url: 当backend是 `vllm-client`时候, 需指定, 例如:`http://127.0.0.1:30000`
             mds_bucket: md存储桶
             predictor: vlm模型
         """

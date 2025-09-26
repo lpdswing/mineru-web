@@ -5,13 +5,11 @@ from modelscope import snapshot_download as ms_snapshot_download
 
 
 class ModelPath:
-    vlm_root_hf = "opendatalab/MinerU2.0-2505-0.9B"
-    vlm_root_modelscope = "OpenDataLab/MinerU2.0-2505-0.9B"
+    vlm_root_hf = "opendatalab/MinerU2.5-2509-1.2B"
+    vlm_root_modelscope = "OpenDataLab/MinerU2.5-2509-1.2B"
     pipeline_root_modelscope = "OpenDataLab/PDF-Extract-Kit-1.0"
     pipeline_root_hf = "opendatalab/PDF-Extract-Kit-1.0"
-    doclayout_yolo = (
-        "models/Layout/YOLO/doclayout_yolo_docstructbench_imgsz1280_2501.pt"
-    )
+    doclayout_yolo = "models/Layout/YOLO/doclayout_yolo_docstructbench_imgsz1280_2501.pt"
     yolo_v8_mfd = "models/MFD/YOLO/yolo_v8_ft.pt"
     unimernet_small = "models/MFR/unimernet_hf_small_2503"
     pytorch_paddle = "models/OCR/paddleocr_torch"
@@ -19,9 +17,7 @@ class ModelPath:
     slanet_plus = "models/TabRec/SlanetPlus/slanet-plus.onnx"
     unet_structure = "models/TabRec/UnetStructure/unet.onnx"
     paddle_table_cls = "models/TabCls/paddle_table_cls/PP-LCNet_x1_0_table_cls.onnx"
-    paddle_orientation_classification = (
-        "models/OriCls/paddle_orientation_classification/PP-LCNet_x1_0_doc_ori.onnx"
-    )
+    paddle_orientation_classification = "models/OriCls/paddle_orientation_classification/PP-LCNet_x1_0_doc_ori.onnx"
 
 
 repo_mapping = {
