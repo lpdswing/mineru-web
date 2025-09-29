@@ -52,7 +52,7 @@
             <el-option label="Pipeline" value="pipeline" />
             <!-- <el-option label="VLM Transformers" value="vlm-transformers" /> -->
             <!-- <el-option label="VLM SgLang Engine" value="vlm-sglang-engine" /> -->
-            <el-option label="VLM Vllm Client" value="vlm-vllm-client" />
+            <el-option label="VLM HTTP Client" value="vlm-http-client" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -77,7 +77,7 @@ interface Settings {
   tableRecognition: boolean
   version: string
   // backend: 'pipeline' | 'vlm-transformers' | 'vlm-sglang-engine' | 'vlm-sglang-client'
-  backend: 'pipeline' | 'vlm-vllm-client'
+  backend: 'pipeline' | 'vlm-http-client'
 }
 
 const defaultSettings: Settings = {
