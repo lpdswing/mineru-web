@@ -49,7 +49,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: python run_worker.py
+    command: python3 run_worker.py
     environment:
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
