@@ -119,7 +119,7 @@ class ParserService:
             parse_method="auto",  # The method for parsing PDF, default is 'auto'
             p_formula_enable=True,  # Enable formula parsing
             p_table_enable=True,  # Enable table parsing
-            server_url=None,  # Server URL for vlm-vllm-client backend
+            server_url=None,  # Server URL for vlm-http-client backend
             f_dump_md=True,  # Whether to dump markdown files
             f_dump_middle_json=True,  # Whether to dump middle JSON files
             f_dump_model_output=True,  # Whether to dump model output files
