@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: lpdswing/mineru-web-frontend:v2.5.4
+    image: lpdswing/mineru-web-frontend:v2.5.4.1
     ports:
       - "8088:80"
     depends_on:
