@@ -28,7 +28,7 @@ from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as
     make_blocks_to_markdown
 from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json as pipeline_result_to_middle_json
 from mineru.backend.vlm.vlm_middle_json_mkcontent import union_make as vlm_union_make
-
+from mineru.backend.vlm.vlm_middle_json_mkcontent import mk_blocks_to_markdown
 from app.models.settings import Settings
 from app.utils.redis_client import redis_client
 
@@ -166,7 +166,7 @@ class ParserService:
                         f"{pdf_file_name}.md",
                         md_content_str,
                     )
-                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True)
+                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True, backend=backend)
                     md_content_with_pages = modify_markdown_image_urls(md_content_with_pages, mds_bucket)
                     md_writer.write_string(
                         f"{pdf_file_name}_pages.md",
@@ -212,7 +212,7 @@ class ParserService:
                         f"{pdf_file_name}.md",
                         md_content_str,
                     )
-                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True)
+                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True, p_formula_enable=p_formula_enable, p_table_enable=p_table_enable, backend=backend)
                     md_content_with_pages = modify_markdown_image_urls(md_content_with_pages, mds_bucket)
                     md_writer.write_string(
                         f"{pdf_file_name}_pages.md",
@@ -233,15 +233,14 @@ class ParserService:
                     )
 
                 if f_dump_model_output:
-                    model_output = ("\n" + "-" * 50 + "\n").join(infer_result)
                     md_writer.write_string(
-                        f"{pdf_file_name}_model_output.txt",
-                        model_output,
+                        f"{pdf_file_name}_model.json",
+                        json.dumps(infer_result, ensure_ascii=False, indent=4),
                     )
         return md_content_list
 
     @staticmethod
-    def convert_middle_json_to_markdown(middle_json: Dict[str, Any], keep_page: bool = True) -> str:
+    def convert_middle_json_to_markdown(middle_json: Dict[str, Any], keep_page: bool = True, p_formula_enable=True, p_table_enable=True, backend='pipeline') -> str:
         """将 middle_json 转换为 markdown 格式
         Args:
             middle_json: 中间 JSON 数据
@@ -256,8 +255,10 @@ class ParserService:
             page_idx = page_info.get('page_idx')
             if not paras_of_layout:
                 continue
-
-            page_markdown = make_blocks_to_markdown(paras_of_layout, MakeMode.MM_MD, "images")
+            if backend == 'pipeline':
+                page_markdown = make_blocks_to_markdown(paras_of_layout, MakeMode.MM_MD, "images")
+            else:
+                page_markdown = mk_blocks_to_markdown(paras_of_layout, MakeMode.MM_MD, p_formula_enable, p_table_enable, "images")
             if keep_page:
                 output_content.append(f"{{{page_idx}}}{'-' * 48}")
             output_content.extend(page_markdown)
