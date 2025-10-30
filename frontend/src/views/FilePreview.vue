@@ -414,22 +414,23 @@ const renderedContent = computed(() => {
 
 <style scoped>
 .preview-wrapper {
-  height: 100vh;
-  padding: 0 0;
+  min-height: 100vh;
+  padding: 0;
   box-sizing: border-box;
   background: #f7f8fa;
   display: flex;
   flex-direction: row;
 }
 .preview-sidebar {
-  width: 220px;
+  width: 240px;
   background: #fff;
   border-right: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
   padding: 12px 0 0 0;
   box-sizing: border-box;
-  height: 100vh;
+  min-height: 100vh;
+  flex-shrink: 0;
 }
 .sidebar-title {
   font-size: 1.05rem;
@@ -485,63 +486,61 @@ const renderedContent = computed(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
+  min-height: 100vh;
+  background: #f7f8fa;
 }
 .preview-header {
   display: flex;
   align-items: center;
-  position: relative;
-  height: 60px;
+  gap: 12px;
+  min-height: 60px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;
-  padding: 0 0;
+  padding: 12px 24px;
+  flex-wrap: wrap;
 }
 .file-title {
-  margin-left: 0;
-  margin-right: 18px;
+  margin-left: 4px;
+  margin-right: 12px;
   font-size: 1.08rem;
   font-weight: 600;
 }
 .view-toggle-group {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  margin-left: auto;
   display: flex;
   gap: 8px;
 }
 .download-btn {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
+  margin-left: 8px;
+  display: inline-flex;
 }
 .preview-content {
-  height: calc(100% - 65px);
+  flex: 1 1 0;
   display: flex;
-  padding: 5px 0;
+  padding: 12px 16px 16px 16px;
   box-sizing: border-box;
-  gap: 3px;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 .preview-left, .preview-right {
-  height: 100%;
-  border: 1px solid #4caf50;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: #fff;
-  transition: width 0.3s ease;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  transition: flex-basis 0.3s ease;
 }
 .preview-left {
-  width: 50%;
+  flex-basis: 50%;
 }
 .preview-right {
-  width: 50%;
-  margin-left: 3px;
-  border: 1px solid #ffeb3b;
+  flex-basis: 50%;
 }
 .full-width {
-  width: 100% !important;
-  margin-left: 0 !important;
+  flex-basis: 100% !important;
 }
 .left-content {
   flex: 1 1 0;
@@ -562,8 +561,8 @@ const renderedContent = computed(() => {
   transition: transform 0.2s;
 }
 .origin-text-scroll, .parsed-content-scroll {
-  max-height: 70vh;
   width: 100%;
+  max-height: none;
   overflow-x: auto;
 }
 .origin-text, .parsed-content {
@@ -624,6 +623,60 @@ const renderedContent = computed(() => {
   padding: 16px;
   max-width: 100%;
   box-sizing: border-box;
+}
+@media (max-width: 1200px) {
+  .preview-sidebar {
+    width: 200px;
+  }
+}
+@media (max-width: 1024px) {
+  .preview-wrapper {
+    flex-direction: column;
+  }
+  .preview-sidebar {
+    width: 100%;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 16px;
+  }
+  .preview-main-area {
+    min-height: auto;
+  }
+  .preview-content {
+    flex-direction: column;
+  }
+  .preview-left,
+  .preview-right {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 768px) {
+  .preview-header {
+    padding: 12px 16px;
+    align-items: flex-start;
+  }
+  .view-toggle-group {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+  .download-btn {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+  .download-btn :deep(.el-button) {
+    width: 100%;
+    justify-content: center;
+  }
+  .preview-content {
+    padding: 12px;
+    gap: 10px;
+  }
+  .origin-img {
+    max-height: 50vh;
+  }
 }
 .markdown-content {
   font-size: 14px;

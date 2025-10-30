@@ -65,13 +65,12 @@ const isSettingsPage = () => route.path === '/settings'
 <style scoped>
 .mineru-layout {
   display: flex;
-  height: 100vh; /* 固定高度，防止被内容撑开出现滚动条 */
-  overflow: hidden; /* 禁止自身滚动，让子元素独立滚动 */
+  min-height: 100vh;
   background: #f7f8fa;
   box-sizing: border-box;
 }
 .sidebar {
-  width: 5vw;
+  width: 88px;
   background: #fff;
   display: flex;
   flex-direction: column;
@@ -79,11 +78,12 @@ const isSettingsPage = () => route.path === '/settings'
   box-shadow: 2px 0 8px 0 rgba(0,0,0,0.03);
   z-index: 10;
   box-sizing: border-box;
-  height: 100%; /* 撑满父容器高度 */
-  overflow-y: auto; /* 如果内容可能超出，允许独立滚动 */
+  padding: 24px 0;
+  flex-shrink: 0;
+  min-height: 100vh;
 }
 .logo-area {
-  height: 64px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,7 +98,7 @@ const isSettingsPage = () => route.path === '/settings'
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 24px;
+  margin-top: 8px;
 }
 .nav-item {
   width: 48px;
@@ -118,7 +118,7 @@ const isSettingsPage = () => route.path === '/settings'
   flex-direction: column;
   gap: 16px;
   align-items: center;
-  margin-bottom: 24px;
+  margin-top: auto;
 }
 .sidebar-icon {
   font-size: 22px;
@@ -150,28 +150,27 @@ const isSettingsPage = () => route.path === '/settings'
   flex-direction: column;
   min-width: 0;
   box-sizing: border-box;
-  height: 100vh; /* 撑满父容器高度 */
-  /* overflow-y: auto; 允许主内容区独立垂直滚动 */
+  min-height: 100vh;
+  overflow: auto;
 }
 .content-area {
   flex: 1;
-  /* {height: auto;} */
-  width: 95vw;
+  width: 100%;
   background: #f7f8fa;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 24px 0;
+  padding: 24px;
   box-sizing: border-box;
 }
 .content-card {
-  width: 95vw;
-  /* max-width: 1200px; */
+  width: 100%;
+  max-width: 1200px;
   background: #fff;
   border-radius: 18px;
   box-shadow: 0 4px 24px 0 rgba(0,0,0,0.04);
   padding: 20px 16px 24px 16px;
-  margin: 0 24px;
+  margin: 0;
   position: relative;
   transition: all 0.2s;
   box-sizing: border-box;
@@ -187,10 +186,67 @@ const isSettingsPage = () => route.path === '/settings'
   margin: 0;
   box-sizing: border-box;
 }
+.content-card :deep(.el-table) {
+  width: 100%;
+}
 @media (max-width: 900px) {
   .content-card {
     padding: 8px 2px;
     min-height: 0;
+  }
+}
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 76px;
+  }
+  .content-area {
+    padding: 20px;
+  }
+}
+@media (max-width: 768px) {
+  .mineru-layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    padding: 12px 16px;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .logo-area {
+    justify-content: flex-start;
+    width: auto;
+    height: auto;
+  }
+  .nav-menu {
+    flex-direction: row;
+    margin-top: 0;
+    justify-content: center;
+    gap: 12px;
+  }
+  .sidebar-bottom {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 0;
+    margin-top: 0;
+  }
+  .version-info {
+    display: none;
+  }
+  .main-area {
+    min-height: auto;
+    width: 100%;
+  }
+  .content-area {
+    padding: 16px;
+  }
+  .content-card {
+    border-radius: 16px;
+    padding: 16px 12px 20px 12px;
   }
 }
 </style>
