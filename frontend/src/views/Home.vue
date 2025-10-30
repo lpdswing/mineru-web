@@ -163,6 +163,9 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .home-root {
+    padding: 24px 16px 0 16px;
+  }
   .stat-row {
     flex-direction: column;
   }

@@ -342,4 +342,38 @@ const handleUpload = async () => {
   border-radius: 12px;
   overflow: hidden;
 }
+@media (max-width: 1024px) {
+  .upload-card {
+    max-width: 680px;
+    padding: 24px 16px;
+  }
+}
+@media (max-width: 768px) {
+  .upload-root {
+    padding: 20px 16px 0 16px;
+  }
+  .upload-card {
+    max-width: 100%;
+    padding: 20px 12px;
+  }
+  .upload-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .url-btn {
+    align-self: flex-end;
+  }
+  .upload-list-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .upload-list-header > span {
+    font-weight: 600;
+  }
+  :deep(.el-upload-dragger) {
+    min-height: 160px;
+  }
+}
 </style> 

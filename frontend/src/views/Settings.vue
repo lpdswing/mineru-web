@@ -188,4 +188,20 @@ onMounted(() => {
   color: #909399;
   margin-top: 4px;
 }
+@media (max-width: 768px) {
+  .settings-root {
+    padding: 16px 16px 0 16px;
+  }
+  .settings-card {
+    width: 100%;
+    padding: 24px 20px 20px 20px;
+    border-radius: 16px;
+  }
+  .settings-select {
+    width: 100%;
+  }
+  :deep(.el-form-item__content) {
+    flex-wrap: wrap;
+  }
+}
 </style>

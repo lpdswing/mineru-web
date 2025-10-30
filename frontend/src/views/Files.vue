@@ -688,4 +688,51 @@ watch([() => params.page, () => params.pageSize], () => {
   font-size: 12px;
   font-weight: 500;
 }
+@media (max-width: 1200px) {
+  .files-root {
+    padding: 20px 24px 0 24px;
+  }
+  :deep(.el-table) {
+    height: auto;
+  }
+}
+@media (max-width: 992px) {
+  .files-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .files-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+  .files-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .search-input,
+  .status-select {
+    width: 100%;
+  }
+}
+@media (max-width: 768px) {
+  .files-root {
+    padding: 16px 16px 0 16px;
+  }
+  .files-header-actions {
+    gap: 8px;
+  }
+  .files-toolbar {
+    margin-bottom: 12px;
+  }
+  .batch-delete-btn,
+  .batch-export-btn,
+  .upload-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
 </style>
