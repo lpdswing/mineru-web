@@ -1,7 +1,7 @@
 services:
 
   mineru-vllm-server:
-    image: lpdswing/mineru-web-backend:v2.5.4
+    image: lpdswing/mineru-web-backend:v2.6.2
     container_name: mineru-vllm-server
     restart: always
     ports:

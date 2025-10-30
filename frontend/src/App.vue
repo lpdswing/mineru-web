@@ -41,7 +41,7 @@ const isSettingsPage = () => route.path === '/settings'
           <img src="/github-logo.svg" alt="GitHub" width="22" height="22" />
         </a>
         <div class="version-info">
-          mineru-2.5.4
+          mineru-2.6.2
         </div>
       </div>
     </aside>
