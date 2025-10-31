@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: lpdswing/mineru-web-frontend:v2.5.4.1
+    image: lpdswing/mineru-web-frontend:v2.6.2
     ports:
       - "8088:80"
     depends_on:
@@ -10,7 +10,7 @@ services:
       - mineru-network
 
   backend:
-    image: lpdswing/mineru-web-backend:v2.5.4
+    image: lpdswing/mineru-web-backend:v2.6.2
     deploy:
       resources:
         reservations:
@@ -26,6 +26,7 @@ services:
       - BACKEND=vllm-client  # 只能用client，uvicorn无法在子进程加载vlm模型
       # - MODEL_PATH=/models/vlm
       - SERVER_URL=http://mineru-vllm-server:30000
+      # - MINERU_TABLE_MERGE_ENABLE=0  # 关闭表格合并
     volumes:
       - ./backend:/app
       - ./mineru.json:/root/mineru.json
@@ -41,7 +42,7 @@ services:
       - mineru-network
 
   worker:
-    image: lpdswing/mineru-web-backend:v2.5.4
+    image: lpdswing/mineru-web-backend:v2.6.2
     deploy:
       resources:
         reservations:
@@ -56,7 +57,7 @@ services:
       - DATABASE_URL=sqlite:///./mineru.db
       # 按需配置
       - SERVER_URL=http://mineru-vllm-server:30000  # sglang server服务地址
-
+      # - MINERU_TABLE_MERGE_ENABLE=0  # 关闭表格合并
     volumes:
       - ./backend:/app
       - ./mineru.json:/root/mineru.json

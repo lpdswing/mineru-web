@@ -11,11 +11,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(PROJECT_ROOT)
 
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
+from app.database import get_db_context
 from app.utils.redis_client import redis_client
-from app.models.file import File as FileModel, FileStatus
+from app.models.file import File as FileModel
+from app.models.enums import FileStatus
 from app.services.parser import ParserService
 
 
@@ -26,10 +25,6 @@ def clean_memory():
         torch.cuda.ipc_collect()
     gc.collect()
 
-# 数据库连接配置
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./mineru.db')
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine)
 # 批处理文件数
 WORK_BATCH = os.getenv("WORK_BATCH", 1)
 
@@ -80,9 +75,6 @@ def run_worker():
     运行文件解析工作者
     """
     logger.info("Starting file parser worker...")
-    
-    # 创建数据库会话
-    db = SessionLocal()
 
     try:
         # 确保消费者组存在
@@ -109,14 +101,16 @@ def run_worker():
                             # 解析任务数据
                             task_data = json.loads(message[b'data'].decode('utf-8'))
                             logger.info(f"Processing task: {task_data}")
-                            
-                            # 处理任务
-                            process_task(task_data, db)
-                            
+
+                            # 使用上下文管理器处理数据库会话
+                            with get_db_context() as db:
+                                # 处理任务
+                                process_task(task_data, db)
+
                             # 确认消息已处理
                             redis_client.ack_message(PARSER_STREAM, CONSUMER_GROUP, stream_id)
                             logger.info(f"Task {stream_id} processed and acknowledged")
-                            
+
                         except json.JSONDecodeError as e:
                             logger.error(f"Failed to decode task data: {e}")
                         except Exception as e:
@@ -133,7 +127,6 @@ def run_worker():
     finally:
         # 清理资源
         logger.info("清理资源。。。")
-        db.close()
         clean_memory()
 
 if __name__ == "__main__":

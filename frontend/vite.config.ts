@@ -18,5 +18,24 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, '/api')
       }
     }
+  },
+  build: {
+    // 代码分割优化
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'element-plus': ['element-plus'],
+          'markdown': ['marked', 'markdown-it', 'markdown-it-katex'],
+          'office': ['mammoth', 'xlsx'],
+          'pdf': ['pdfjs-dist'],
+          'utils': ['jszip', 'axios', 'uuid']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000
+  },
+  esbuild: {
+    // 生产环境移除 console 和 debugger
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : []
   }
 })

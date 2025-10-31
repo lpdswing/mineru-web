@@ -126,25 +126,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import JSZip from 'jszip'
-import { getUserId } from '@/utils/user'
+import axios from 'axios'
+import { filesApi } from '@/api/files'
 import { formatFileSize } from '@/utils/format'
-
-interface FileItem {
-  id: string
-  filename: string
-  size: number
-  uploadTime: string
-  status: 'pending' | 'parsing' | 'parsed' | 'parse_failed'
-  backend?: string  // 添加backend字段
-  start_at?: string  // 开始时间
-  finish_at?: string // 结束时间
-}
+import {
+  formatDateTime,
+  getFileStatusText as getStatusText,
+  getFileStatusType as getStatusType,
+  getBackendIcon,
+  getBackendColor
+} from '@/utils/status'
+import type { FileItem, ExportFormat } from '@/types/file'
+import { ExportFormatNames } from '@/types/file'
 
 const files = ref<FileItem[]>([])
 const total = ref(0)
@@ -167,77 +165,10 @@ const multipleSelection = ref<FileItem[]>([])
 
 const router = useRouter()
 
-// 导出格式类型
-const ExportFormats = {
-  MARKDOWN: 'markdown',
-  MARKDOWN_PAGE: 'markdown_page'
-} as const
-
-type ExportFormat = typeof ExportFormats[keyof typeof ExportFormats]
-
-// 导出格式显示名称
-const ExportFormatNames: Record<ExportFormat, string> = {
-  [ExportFormats.MARKDOWN]: 'Markdown',
-  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码'
-}
-
-
-
-const formatDateTime = (dateStr: string) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  })
-}
-
-const getStatusType = (status: string) => {
-  const map: Record<string, string> = {
-    pending: 'info',
-    parsing: 'warning',
-    parsed: 'success',
-    parse_failed: 'danger'
-  }
-  return map[status] || 'info'
-}
-
-const getStatusText = (status: string) => {
-  const map: Record<string, string> = {
-    pending: '等待解析',
-    parsing: '解析中',
-    parsed: '已完成',
-    parse_failed: '解析失败'
-  }
-  return map[status] || '未知状态'
-}
-
-const getBackendIcon = (backend?: string) => {
-  switch (backend) {
-    case 'pipeline':
-      return 'Pipeline'
-    case 'vlm':
-      return 'VLM'
-    default:
-      return ''
-  }
-}
-
-const getBackendColor = (backend?: string) => {
-  switch (backend) {
-    case 'pipeline':
-      return '#409EFF'  // 蓝色
-    case 'vlm':
-      return '#67C23A'  // 绿色
-    default:
-      return '#909399'  // 灰色
-  }
-}
+// 智能轮询：只有在有parsing状态的文件时才轮询
+const hasParsingFiles = computed(() =>
+  files.value.some(f => f.status === 'parsing')
+)
 
 const openPreview = (file: FileItem) => {
   router.push({ name: 'FilePreview', params: { id: file.id } })
@@ -245,41 +176,34 @@ const openPreview = (file: FileItem) => {
 
 const handleExport = async (file: FileItem, format: ExportFormat) => {
   if (!file || exportingId.value === file.id) return
-  
+
   exportingId.value = file.id
   try {
-    // 发起导出请求
-    const res = await axios.get(`/api/files/${file.id}/export`, {
-      params: { format },
-      headers: { 'X-User-Id': getUserId() }
-    })
-    
-    if (res.data.status === 'success') {
+    const result = await filesApi.exportFile(file.id, format)
+
+    if (result.status === 'success') {
       // 使用 fetch 下载文件
-      const response = await fetch(res.data.download_url)
+      const response = await fetch(result.download_url)
       const blob = await response.blob()
-      
+
       // 创建一个 Blob URL
       const url = window.URL.createObjectURL(blob)
-      
+
       // 创建一个隐藏的 a 标签来下载文件
       const link = document.createElement('a')
       link.href = url
-      link.download = res.data.filename  // 使用后端返回的文件名
+      link.download = result.filename
       document.body.appendChild(link)
       link.click()
-      
+
       // 清理
       window.URL.revokeObjectURL(url)
       document.body.removeChild(link)
-      
+
       ElMessage.success(`导出${ExportFormatNames[format]}成功`)
-    } else {
-      ElMessage.error(`导出${ExportFormatNames[format]}失败`)
     }
   } catch (e) {
-    console.error('导出失败:', e)
-    ElMessage.error(`导出${ExportFormatNames[format]}失败`)
+    // 错误已在拦截器中处理
   } finally {
     exportingId.value = ''
   }
@@ -311,10 +235,9 @@ const updateFiles = (newFiles: FileItem[]) => {
 
 // 开始轮询
 const startPolling = () => {
-  console.log('开始轮询...')
   // 确保不会重复启动轮询
   stopPolling()
-  
+
   // 立即启动轮询
   pollingTimer.value = window.setInterval(async () => {
     await pollFiles()
@@ -324,20 +247,17 @@ const startPolling = () => {
 // 轮询获取文件列表
 const pollFiles = async () => {
   try {
-    const res = await axios.get('/api/files', {
-      params: {
-        page: params.page,
-        page_size: params.pageSize,
-        search: params.search,
-        status: params.status
-      },
-      headers: { 'X-User-Id': getUserId() }
+    const result = await filesApi.getFiles({
+      page: params.page,
+      page_size: params.pageSize,
+      search: params.search,
+      status: params.status
     })
-    
-    updateFiles(res.data.files)
-    total.value = res.data.total
+
+    updateFiles(result.files)
+    total.value = result.total
   } catch (e) {
-    console.error('轮询获取文件列表失败:', e)
+    // 错误已在拦截器中处理，这里静默失败
   }
 }
 
@@ -345,20 +265,16 @@ const pollFiles = async () => {
 const fetchFiles = async () => {
   loading.value = true
   try {
-    const res = await axios.get('/api/files', {
-      params: {
-        page: params.page,
-        page_size: params.pageSize,
-        search: params.search,
-        status: params.status
-      },
-      headers: { 'X-User-Id': getUserId() }
+    const result = await filesApi.getFiles({
+      page: params.page,
+      page_size: params.pageSize,
+      search: params.search,
+      status: params.status
     })
-    
-    files.value = res.data.files
-    total.value = res.data.total
+
+    files.value = result.files
+    total.value = result.total
   } catch (e) {
-    ElMessage.error('获取文件列表失败')
     files.value = []
     total.value = 0
   } finally {
@@ -377,44 +293,40 @@ const deleteFile = (file: FileItem) => {
     }
   ).then(async () => {
     try {
-      await axios.delete(`/api/files/${file.id}`, {
-        headers: { 'X-User-Id': getUserId() }
-      })
+      await filesApi.deleteFile(file.id)
       ElMessage.success('删除成功')
       fetchFiles()
     } catch (e) {
-      ElMessage.error('删除失败')
+      // 错误已在拦截器中处理
     }
   }).catch(() => {})
 }
 
 const downloadFile = async (file: FileItem) => {
   try {
-    const res = await axios.get(`/api/files/${file.id}/download_url`, {
-      headers: { 'X-User-Id': getUserId() }
-    })
-    
+    const result = await filesApi.getDownloadUrl(file.id)
+
     // 使用 axios 获取文件内容，设置 responseType 为 blob
-    const response = await axios.get(res.data.url, {
+    const response = await axios.get(result.url, {
       responseType: 'blob'
     })
-    
+
     // 创建 Blob URL
     const blob = new Blob([response.data])
     const url = window.URL.createObjectURL(blob)
-    
+
     // 创建临时链接并下载
     const link = document.createElement('a')
     link.href = url
     link.download = file.filename
     document.body.appendChild(link)
     link.click()
-    
+
     // 清理
     window.URL.revokeObjectURL(url)
     document.body.removeChild(link)
   } catch (e) {
-    ElMessage.error('下载失败')
+    // 错误已在拦截器中处理
   }
 }
 
@@ -437,12 +349,9 @@ const handleBatchDelete = async () => {
       // 并发删除所有选中的文件
       const deletePromises = multipleSelection.value.map(async (file) => {
         try {
-          await axios.delete(`/api/files/${file.id}`, {
-            headers: { 'X-User-Id': getUserId() }
-          })
+          await filesApi.deleteFile(file.id)
         } catch (e) {
           failedFiles.push(file.filename)
-          console.error(`删除文件 ${file.filename} 失败:`, e)
         }
       })
       
@@ -459,8 +368,7 @@ const handleBatchDelete = async () => {
       // 重新加载文件列表
       fetchFiles()
     } catch (e) {
-      console.error('批量删除失败:', e)
-      ElMessage.error('批量删除操作失败')
+      // 错误已在拦截器中处理
     } finally {
       batchExporting.value = false
     }
@@ -478,22 +386,18 @@ const handleBatchExport = async (format: ExportFormat) => {
     // 对每个文件分别调用导出接口
     for (const file of multipleSelection.value) {
       try {
-        const res = await axios.get(`/api/files/${file.id}/export`, {
-          params: { format },
-          headers: { 'X-User-Id': getUserId() }
-        })
-        
-        if (res.data.status === 'success') {
+        const result = await filesApi.exportFile(file.id, format)
+
+        if (result.status === 'success') {
           // 获取文件内容
-          const response = await fetch(res.data.download_url)
+          const response = await fetch(result.download_url)
           const content = await response.blob()
-          
+
           // 添加到zip文件
-          zip.file(res.data.filename, content)
+          zip.file(result.filename, content)
         }
       } catch (e) {
-        console.error(`导出文件 ${file.filename} 失败:`, e)
-        ElMessage.error(`导出文件 ${file.filename} 失败`)
+        // 单个文件失败不中断整体流程
       }
     }
     
@@ -514,8 +418,7 @@ const handleBatchExport = async (format: ExportFormat) => {
     
     ElMessage.success(`批量导出${ExportFormatNames[format]}完成`)
   } catch (e) {
-    console.error('批量导出失败:', e)
-    ElMessage.error(`批量导出${ExportFormatNames[format]}失败`)
+    // 错误已在拦截器中处理
   } finally {
     batchExporting.value = false
   }
@@ -527,18 +430,16 @@ const handleSelectionChange = (val: FileItem[]) => {
 
 const parseFile = async (file: FileItem) => {
   try {
-    await axios.post(`/api/files/${file.id}/parse`, {}, {
-      headers: { 'X-User-Id': getUserId() }
-    })
+    await filesApi.parseFile(file.id)
     ElMessage.success('解析任务已提交')
-    
+
     // 立即更新文件状态为 parsing
     const index = files.value.findIndex(f => f.id === file.id)
     if (index !== -1) {
       files.value[index] = { ...files.value[index], status: 'parsing' }
     }
   } catch (e) {
-    ElMessage.error('解析任务提交失败')
+    // 错误已在拦截器中处理
   }
 }
 
@@ -572,6 +473,15 @@ watch([() => params.search, () => params.status], () => {
 // 监听分页变化
 watch([() => params.page, () => params.pageSize], () => {
   fetchFiles()
+})
+
+// 智能轮询：只在有parsing文件时轮询
+watch(hasParsingFiles, (hasParsing) => {
+  if (hasParsing) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
 })
 </script>
 

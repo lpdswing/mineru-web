@@ -16,7 +16,7 @@
         :on-change="handleFileChange"
         :on-remove="handleFileRemove"
         :before-upload="beforeUpload"
-        accept=".pdf,.png,.jpg,.jpeg"
+        accept=".pdf,.png,.jpeg,.jp2,.webp,.gif,.bmp,.jpg,.tiff"
         multiple
         :limit="20"
         :disabled="uploading"
@@ -27,7 +27,7 @@
         </div>
         <template #tip>
           <div class="el-upload__tip">
-            支持的文件类型：PDF、PNG、JPG、JPEG
+            支持的文件类型：PDF、PNG、JPG、JPEG、JP2、WEBP、GIF、BMP、TIFF
             <br>
             单个文档不超过 <b>200M</b> 或 <b>600</b> 页，单图片不超过 <b>10M</b>，单次最多 <b>20</b> 个文件
           </div>
@@ -49,8 +49,8 @@
           </el-table-column>
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
-              <el-tag :type="getStatusType(row.status)">
-                {{ getStatusText(row.status) }}
+              <el-tag :type="getUploadStatusType(row.status)">
+                {{ getUploadStatusText(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -88,10 +88,10 @@
 import { ref } from 'vue'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
 import type { UploadInstance } from 'element-plus'
-import { getUserId } from '@/utils/user'
+import { filesApi } from '@/api/files'
 import { formatFileSize } from '@/utils/format'
+import { getUploadStatusText, getUploadStatusType } from '@/utils/status'
 
 interface UploadFile {
   name: string
@@ -114,7 +114,6 @@ const uploadRef = ref<UploadInstance>()
 
 const beforeUpload = (file: File) => {
   // 检查文件大小
-  console.log('文件大小:', file.size)
   const isLt200M = file.size / 1024 / 1024 < 200
   if (!isLt200M) {
     ElMessage.error('文件大小不能超过 200MB!')
@@ -125,16 +124,11 @@ const beforeUpload = (file: File) => {
   const allowedTypes = [
     // PDF
     '.pdf',
-    // Office (Word & PowerPoint)
-    // '.doc', '.docx', '.ppt', '.pptx',
-    // 图片
-    '.png', '.jpg', '.jpeg'
+    // 图片格式
+    '.png', '.jpg', '.jpeg', '.jp2', '.webp', '.gif', '.bmp', '.tiff'
   ]
-  
+
   const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
-  console.log('文件类型:', fileExt)
-  console.log('允许的类型:', allowedTypes)
-  console.log('是否允许:', allowedTypes.includes(fileExt))
 
   // 检查是否是 Excel 文件
   if (fileExt === '.xls' || fileExt === '.xlsx') {
@@ -143,7 +137,7 @@ const beforeUpload = (file: File) => {
   }
 
   if (!allowedTypes.includes(fileExt)) {
-    ElMessage.error(`不支持的文件类型！仅支持：PDF、Word、PowerPoint、PNG、JPG`)
+    ElMessage.error(`不支持的文件类型！支持的格式：PDF、PNG、JPG、JPEG、JP2、WEBP、GIF、BMP、TIFF`)
     return false
   }
 
@@ -155,7 +149,7 @@ const handleFileChange = (file: any) => {
   if (!beforeUpload(file.raw)) {
     return
   }
-  
+
   fileList.value.push({
     name: file.name,
     size: file.size,
@@ -169,26 +163,6 @@ const handleFileRemove = (file: UploadFile) => {
   if (index !== -1) {
     fileList.value.splice(index, 1)
   }
-}
-
-const getStatusType = (status: string) => {
-  const map: Record<string, string> = {
-    waiting: 'info',
-    uploading: 'warning',
-    success: 'success',
-    error: 'danger'
-  }
-  return map[status] || 'info'
-}
-
-const getStatusText = (status: string) => {
-  const map: Record<string, string> = {
-    waiting: '等待上传',
-    uploading: '上传中',
-    success: '上传成功',
-    error: '上传失败'
-  }
-  return map[status] || '未知状态'
 }
 
 const handleUrlUpload = () => {
@@ -232,14 +206,9 @@ const handleUpload = async () => {
       // 如有URL上传，也可在此处理
     })
 
-    const res = await axios.post('/api/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'X-User-Id': getUserId()
-      }
-    })
+    const result = await filesApi.uploadFiles(formData)
 
-    if (res.data && res.data.total > 0) {
+    if (result && result.total > 0) {
       ElMessage.success('文件上传成功，已进入解析队列！')
       fileList.value = []
       // 清空el-upload组件的文件列表
@@ -248,8 +217,7 @@ const handleUpload = async () => {
       ElMessage.error('文件上传失败，请重试！')
     }
   } catch (error) {
-    console.error('上传失败:', error)
-    ElMessage.error('文件上传失败，请重试！')
+    // 错误已在拦截器中处理
   } finally {
     uploading.value = false
   }

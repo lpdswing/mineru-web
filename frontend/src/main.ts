@@ -2,15 +2,35 @@ import { createApp } from 'vue'
 import './style.css'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 
+// 按需引入使用的图标
+import {
+  HomeFilled,
+  Upload,
+  UploadFilled,
+  Document,
+  Setting,
+  Delete,
+  Link
+} from '@element-plus/icons-vue'
+
 const app = createApp(App)
 
-// 注册所有图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+// 只注册实际使用的图标
+const icons = {
+  HomeFilled,
+  Upload,
+  UploadFilled,
+  Document,
+  Setting,
+  Delete,
+  Link
+}
+
+for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 
