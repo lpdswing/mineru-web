@@ -67,7 +67,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import { settingsApi } from '@/api/settings'
 import { getUserId } from '@/utils/user'
 
 interface Settings {
@@ -76,13 +76,12 @@ interface Settings {
   formulaRecognition: boolean
   tableRecognition: boolean
   version: string
-  // backend: 'pipeline' | 'vlm-transformers' | 'vlm-sglang-engine' | 'vlm-sglang-client'
   backend: 'pipeline' | 'vlm-http-client'
 }
 
 const defaultSettings: Settings = {
   forceOcr: false,
-  ocrLanguage: 'ch',  // 将默认值从'auto'改为'ch'
+  ocrLanguage: 'ch',
   formulaRecognition: true,
   tableRecognition: true,
   version: '',
@@ -94,30 +93,24 @@ const settings = ref<Settings>({ ...defaultSettings })
 // 加载设置
 const loadSettings = async () => {
   try {
-    const response = await axios.get('/api/settings', {
-      headers: {
-        'X-User-Id': getUserId()
-      }
-    })
-
+    const data = await settingsApi.getSettings()
     settings.value = {
-      forceOcr: response.data.force_ocr,
-      ocrLanguage: response.data.ocr_lang,
-      formulaRecognition: response.data.formula_recognition,
-      tableRecognition: response.data.table_recognition,
-      version: response.data.version || '',
-      backend: response.data.backend || 'pipeline'
+      forceOcr: data.force_ocr,
+      ocrLanguage: data.ocr_lang,
+      formulaRecognition: data.formula_recognition,
+      tableRecognition: data.table_recognition,
+      version: data.version || '',
+      backend: data.backend || 'pipeline'
     }
-  } catch (error: any) {
-    console.error('加载设置失败:', error.response?.data || error.message)
-    ElMessage.error(`加载设置失败: ${error.response?.data?.detail || error.message}`)
+  } catch (error) {
+    // 错误已在拦截器中处理
   }
 }
 
 // 保存设置
 const saveSettings = async () => {
   try {
-    await axios.put('/api/settings', {
+    await settingsApi.updateSettings({
       force_ocr: settings.value.forceOcr,
       ocr_lang: settings.value.ocrLanguage,
       formula_recognition: settings.value.formulaRecognition,
@@ -125,16 +118,10 @@ const saveSettings = async () => {
       version: settings.value.version,
       backend: settings.value.backend,
       user_id: getUserId()
-    }, {
-      headers: {
-        'X-User-Id': getUserId()
-      }
     })
-
     ElMessage.success('设置已保存')
-  } catch (error: any) {
-    console.error('保存设置失败:', error.response?.data || error.message)
-    ElMessage.error(`保存设置失败: ${error.response?.data?.detail || error.message}`)
+  } catch (error) {
+    // 错误已在拦截器中处理
   }
 }
 

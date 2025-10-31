@@ -1,10 +1,4 @@
-import axios from 'axios'
-import { getUserId } from '@/utils/user'
-
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 5000
-})
+import api from './index'
 
 export interface StatsResponse {
   totalFiles: number
@@ -19,12 +13,12 @@ export interface StatsResponse {
   }>
 }
 
-
-
 export const statsApi = {
-  getStats(): Promise<StatsResponse> {
-    return api.get('/stats', {
-      headers: { 'X-User-Id': getUserId() }
-    }).then(response => response.data)
+  /**
+   * 获取统计数据
+   */
+  getStats() {
+    return api.get<StatsResponse>('/stats')
+      .then(response => response.data)
   }
 } 

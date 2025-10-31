@@ -2,7 +2,7 @@
   <div class="home-root">
     <div class="home-header">
       <h1 class="home-title">MinerU 2.0 免费全能的文档解析神器！</h1>
-      <p class="home-desc">点击或拖拽上传文档<br>单个文档不超过 <b>200M</b> 或 <b>600</b> 页，单图片不超过 <b>10M</b>，单次上传最多 <b>20</b> 个文件</p>
+      <p class="home-desc">点击或拖拽上传文档<br>支持格式：PDF、PNG、JPG、JPEG、JP2、WEBP、GIF、BMP、TIFF<br>单个文档不超过 <b>200M</b> 或 <b>600</b> 页，单图片不超过 <b>10M</b>，单次上传最多 <b>20</b> 个文件</p>
     </div>
     <div class="stat-row">
       <div class="stat-card">

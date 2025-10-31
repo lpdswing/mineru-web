@@ -686,6 +686,7 @@ const renderedContent = computed(() => {
   overflow-wrap: break-word;
   word-wrap: break-word;
   word-break: break-word;
+  overflow-x: hidden; /* 防止水平溢出 */
 }
 .markdown-content :deep(h1) {
   font-size: 2em;
@@ -693,6 +694,7 @@ const renderedContent = computed(() => {
   border-bottom: 1px solid #eaecef;
   padding-bottom: 0.3em;
   word-break: break-word;
+  clear: both; /* 清除浮动，防止重叠 */
 }
 .markdown-content :deep(h2) {
   font-size: 1.5em;
@@ -700,20 +702,24 @@ const renderedContent = computed(() => {
   border-bottom: 1px solid #eaecef;
   padding-bottom: 0.3em;
   word-break: break-word;
+  clear: both;
 }
 .markdown-content :deep(h3) {
   font-size: 1.25em;
   margin: 1em 0;
   word-break: break-word;
+  clear: both;
 }
 .markdown-content :deep(p) {
   margin: 1em 0;
   word-break: break-word;
+  clear: both;
 }
-.markdown-content :deep(ul), 
+.markdown-content :deep(ul),
 .markdown-content :deep(ol) {
   padding-left: 2em;
   margin: 1em 0;
+  clear: both;
 }
 .markdown-content :deep(li) {
   margin: 0.5em 0;
@@ -725,6 +731,7 @@ const renderedContent = computed(() => {
   border-radius: 3px;
   font-family: monospace;
   word-break: break-all;
+  font-size: 0.9em;
 }
 .markdown-content :deep(pre) {
   background-color: #f6f8fa;
@@ -732,17 +739,21 @@ const renderedContent = computed(() => {
   border-radius: 6px;
   overflow-x: auto;
   max-width: 100%;
+  margin: 1em 0;
+  clear: both;
 }
 .markdown-content :deep(pre code) {
   white-space: pre;
   word-break: normal;
   overflow-wrap: normal;
+  display: block;
 }
 .markdown-content :deep(blockquote) {
   margin: 1em 0;
   padding: 0 1em;
   color: #6a737d;
   border-left: 0.25em solid #dfe2e5;
+  clear: both;
 }
 .markdown-content :deep(table) {
   border-collapse: collapse;
@@ -751,12 +762,16 @@ const renderedContent = computed(() => {
   max-width: 100%;
   overflow-x: auto;
   display: block;
+  clear: both;
 }
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
   border: 1px solid #dfe2e5;
   padding: 6px 13px;
   word-break: break-word;
+  max-width: 300px; /* 限制单元格宽度，防止在窄屏下溢出 */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .markdown-content :deep(th) {
   background-color: #f6f8fa;
@@ -764,7 +779,54 @@ const renderedContent = computed(() => {
 .markdown-content :deep(img) {
   max-width: 100%;
   height: auto;
+  display: block;
+  margin: 1em auto;
+  clear: both;
 }
+/* 数学公式样式优化 */
+.markdown-content :deep(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  margin: 1em 0;
+  padding: 0.5em 0;
+  clear: both;
+}
+.markdown-content :deep(.katex) {
+  font-size: 1em;
+  max-width: 100%;
+  overflow-x: auto;
+}
+/* 隐藏 MathML 版本，只显示 HTML 版本 */
+.markdown-content :deep(.katex-mathml) {
+  display: none !important;
+}
+/* 确保 HTML 版本正常显示 */
+.markdown-content :deep(.katex-html) {
+  display: inline-block;
+}
+.markdown-content :deep(.katex-display .katex-html) {
+  display: block;
+  text-align: center;
+}
+/* 防止链接溢出 */
+.markdown-content :deep(a) {
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+/* 确保所有块级元素不重叠 */
+.markdown-content :deep(*) {
+  position: relative;
+  z-index: auto;
+}
+/* 在窄屏下额外的优化 */
+.preview-right:not(.full-width) .markdown-content :deep(table) {
+  font-size: 0.85em; /* 表格字体缩小 */
+}
+.preview-right:not(.full-width) .markdown-content :deep(pre) {
+  font-size: 0.85em; /* 代码块字体缩小 */
+}
+
 </style>
 
 <style>
