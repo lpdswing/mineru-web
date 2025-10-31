@@ -26,7 +26,7 @@ export default defineConfig({
         manualChunks: {
           'element-plus': ['element-plus'],
           'markdown': ['marked', 'markdown-it', 'markdown-it-katex'],
-          'office': ['mammoth', 'xlsx', 'pptxjs'],
+          'office': ['mammoth', 'xlsx'],
           'pdf': ['pdfjs-dist'],
           'utils': ['jszip', 'axios', 'uuid']
         }
