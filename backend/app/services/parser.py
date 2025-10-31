@@ -1,18 +1,13 @@
 import os
-import tempfile
-from typing import List, Dict, Any, Union, Tuple
-import sys
 import json
 import re
 import copy
+from typing import Dict, Any
 from datetime import datetime
-from io import StringIO
 from pathlib import Path
 from loguru import logger
 from mineru.utils.pdf_image_tools import images_bytes_to_pdf_bytes
-
-# PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-# sys.path.append(PROJECT_ROOT)
+from mineru.cli.common import convert_pdf_bytes_to_bytes_by_pypdfium2
 
 from app.utils.minio_client import minio_client, MINIO_BUCKET
 from app.models.parsed_content import ParsedContent
@@ -22,23 +17,26 @@ from sqlalchemy.orm import Session
 from mineru.data.data_reader_writer import DataWriter
 from mineru.data.data_reader_writer.s3 import S3DataWriter
 from mineru.utils.config_reader import get_s3_config, read_config
-from mineru.cli.common import convert_pdf_bytes_to_bytes_by_pypdfium2
 from mineru.utils.enum_class import MakeMode
 from mineru.backend.vlm.vlm_analyze import doc_analyze as vlm_doc_analyze
 from mineru.backend.pipeline.pipeline_analyze import doc_analyze as pipeline_doc_analyze
-from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as pipeline_union_make, \
+from mineru.backend.pipeline.pipeline_middle_json_mkcontent import (
+    union_make as pipeline_union_make,
     make_blocks_to_markdown
-from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json as pipeline_result_to_middle_json
-from mineru.backend.vlm.vlm_middle_json_mkcontent import union_make as vlm_union_make
-from mineru.backend.vlm.vlm_middle_json_mkcontent import mk_blocks_to_markdown
+)
+from mineru.backend.pipeline.model_json_to_middle_json import (
+    result_to_middle_json as pipeline_result_to_middle_json
+)
+from mineru.backend.vlm.vlm_middle_json_mkcontent import (
+    union_make as vlm_union_make,
+    mk_blocks_to_markdown
+)
 from app.models.settings import Settings
 from app.utils.redis_client import redis_client
 
 # 支持的文件扩展名
 PDF_EXTENSIONS = [".pdf"]
-# 2.0取消了liboffice套件，只支持pdf和图片
-# OFFICE_EXTENSIONS = [".ppt", ".pptx", ".doc", ".docx"]
-IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"]
+IMAGE_EXTENSIONS = [".png", ".jpeg", ".jp2", ".webp", ".gif", ".bmp", ".jpg", ".tiff"]
 
 # Redis 频道名称
 PARSER_CHANNEL = "file_parser_tasks"
@@ -47,26 +45,6 @@ CONSUMER_GROUP = "parser_workers"
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:30000")
 
-class MemoryDataWriter(DataWriter):
-    """内存数据写入器，用于临时存储解析结果"""
-
-    def __init__(self):
-        self.buffer = StringIO()
-
-    def write(self, path: str, data: bytes) -> None:
-        if isinstance(data, str):
-            self.buffer.write(data)
-        else:
-            self.buffer.write(data.decode("utf-8"))
-
-    def write_string(self, path: str, data: str) -> None:
-        self.buffer.write(data)
-
-    def get_value(self) -> str:
-        return self.buffer.getvalue()
-
-    def close(self):
-        self.buffer.close()
 
 
 def get_s3_image_url(image_path: str, bucket: str) -> str:
@@ -89,7 +67,6 @@ def modify_markdown_image_urls(markdown_content: str, bucket: str) -> str:
         if image_path.startswith(('http://', 'https://')):
             return match.group(0)
         # 否则转换为S3 URL
-        print(image_path, '---')
         return f'![]({get_s3_image_url(image_path, bucket)})'
 
     # 应用替换
@@ -106,6 +83,201 @@ def get_buckets() -> list[str]:
     return list(bucket_info.keys())
 
 
+def _process_pipeline(
+    pdf_file_names: list[str],
+    pdf_bytes_list: list[bytes],
+    p_lang_list: list[str],
+    parse_method: str,
+    p_formula_enable: bool,
+    p_table_enable: bool,
+    md_writer: DataWriter,
+    image_writer: DataWriter,
+    mds_bucket: str,
+    f_dump_md: bool,
+    f_dump_content_list: bool,
+    f_dump_middle_json: bool,
+    f_dump_model_output: bool,
+    f_make_md_mode: MakeMode,
+) -> list[str]:
+    """
+    处理 pipeline 后端的解析逻辑
+    参考 common.py 的 _process_pipeline 设计
+    """
+    md_content_list = []
+
+    # 执行 pipeline 分析
+    infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = pipeline_doc_analyze(
+        pdf_bytes_list,
+        p_lang_list,
+        parse_method=parse_method,
+        formula_enable=p_formula_enable,
+        table_enable=p_table_enable
+    )
+
+    # 处理每个文件的结果
+    for idx, model_list in enumerate(infer_results):
+        model_json = copy.deepcopy(model_list)
+        pdf_file_name = pdf_file_names[idx]
+
+        # 生成中间 JSON
+        middle_json = pipeline_result_to_middle_json(
+            model_list,
+            all_image_lists[idx],
+            all_pdf_docs[idx],
+            image_writer,
+            lang_list[idx],
+            ocr_enabled_list[idx],
+            p_formula_enable
+        )
+        pdf_info = middle_json["pdf_info"]
+
+        # 统一输出处理
+        md_content_str = _write_outputs(
+            pdf_file_name, pdf_info, middle_json, model_json,
+            md_writer, mds_bucket, "pipeline",
+            f_dump_md, f_dump_content_list, f_dump_middle_json,
+            f_dump_model_output, f_make_md_mode,
+            p_formula_enable, p_table_enable
+        )
+        md_content_list.append(md_content_str)
+
+    return md_content_list
+
+
+def _process_vlm(
+    pdf_file_names: list[str],
+    pdf_bytes_list: list[bytes],
+    backend: str,
+    server_url: str,
+    p_formula_enable: bool,
+    p_table_enable: bool,
+    md_writer: DataWriter,
+    image_writer: DataWriter,
+    mds_bucket: str,
+    f_dump_md: bool,
+    f_dump_content_list: bool,
+    f_dump_middle_json: bool,
+    f_dump_model_output: bool,
+    f_make_md_mode: MakeMode,
+    predictor=None,
+) -> list[str]:
+    """
+    处理 VLM 后端的解析逻辑
+    参考 common.py 的 _process_vlm 设计
+    """
+    md_content_list = []
+
+    # 移除 vlm- 前缀
+    if backend.startswith("vlm-"):
+        backend = backend[4:]
+
+    # 如果不是 client 后端，server_url 设为 None
+    if not backend.endswith("client"):
+        server_url = None
+
+    # 读取 VLM 配置
+    conf = read_config()
+    model_path = conf.get("models-dir", {}).get("vlm", '')
+
+    # 设置环境变量（VLM 需要）
+    os.environ['MINERU_VLM_FORMULA_ENABLE'] = str(p_formula_enable)
+    os.environ['MINERU_VLM_TABLE_ENABLE'] = str(p_table_enable)
+
+    # 处理每个文件
+    for idx, pdf_bytes in enumerate(pdf_bytes_list):
+        pdf_file_name = pdf_file_names[idx]
+
+        # 执行 VLM 分析
+        middle_json, infer_result = vlm_doc_analyze(
+            pdf_bytes,
+            image_writer=image_writer,
+            predictor=predictor,
+            backend=backend,
+            model_path=model_path,
+            server_url=server_url
+        )
+        pdf_info = middle_json["pdf_info"]
+
+        # 统一输出处理
+        md_content_str = _write_outputs(
+            pdf_file_name, pdf_info, middle_json, infer_result,
+            md_writer, mds_bucket, backend,
+            f_dump_md, f_dump_content_list, f_dump_middle_json,
+            f_dump_model_output, f_make_md_mode,
+            p_formula_enable, p_table_enable
+        )
+        md_content_list.append(md_content_str)
+
+    return md_content_list
+
+
+def _write_outputs(
+    pdf_file_name: str,
+    pdf_info: dict,
+    middle_json: dict,
+    model_output: dict,
+    md_writer: DataWriter,
+    mds_bucket: str,
+    backend: str,
+    f_dump_md: bool = True,
+    f_dump_content_list: bool = False,
+    f_dump_middle_json: bool = True,
+    f_dump_model_output: bool = True,
+    f_make_md_mode: MakeMode = MakeMode.MM_MD,
+    p_formula_enable: bool = True,
+    p_table_enable: bool = True,
+) -> str:
+    """
+    统一处理输出文件写入
+    参考 common.py 的 _process_output 函数设计
+
+    Returns:
+        str: 主 markdown 内容
+    """
+    md_content_str = ""
+
+    # 选择合适的 make 函数
+    make_func = pipeline_union_make if backend == "pipeline" else vlm_union_make
+
+    if f_dump_md:
+        # 生成主 markdown
+        md_content_str = make_func(pdf_info, f_make_md_mode, "images")
+        md_content_str = modify_markdown_image_urls(md_content_str, mds_bucket)
+        md_writer.write_string(f"{pdf_file_name}.md", md_content_str)
+
+        # 生成带页码的 markdown
+        md_content_with_pages = ParserService.convert_middle_json_to_markdown(
+            middle_json,
+            keep_page=True,
+            backend=backend,
+            p_formula_enable=p_formula_enable,
+            p_table_enable=p_table_enable
+        )
+        md_content_with_pages = modify_markdown_image_urls(md_content_with_pages, mds_bucket)
+        md_writer.write_string(f"{pdf_file_name}_pages.md", md_content_with_pages)
+
+    if f_dump_content_list:
+        content_list = make_func(pdf_info, MakeMode.CONTENT_LIST, "images")
+        md_writer.write_string(
+            f"{pdf_file_name}_content_list.json",
+            json.dumps(content_list, ensure_ascii=False, indent=4),
+        )
+
+    if f_dump_middle_json:
+        md_writer.write_string(
+            f"{pdf_file_name}_middle.json",
+            json.dumps(middle_json, ensure_ascii=False, indent=4),
+        )
+
+    if f_dump_model_output:
+        md_writer.write_string(
+            f"{pdf_file_name}_model.json",
+            json.dumps(model_output, ensure_ascii=False, indent=4),
+        )
+
+    return md_content_str
+
+
 
 
 class ParserService:
@@ -114,132 +286,72 @@ class ParserService:
 
     @staticmethod
     def do_parse(
-            pdf_file_names: list[str],  # List of PDF file names to be parsed
-            pdf_bytes_list: list[bytes],  # List of PDF bytes to be parsed
-            p_lang_list: list[str],  # List of languages for each PDF, default is 'ch' (Chinese)
-            backend="pipeline",  # The backend for parsing PDF, default is 'pipeline'
-            parse_method="auto",  # The method for parsing PDF, default is 'auto'
-            p_formula_enable=True,  # Enable formula parsing
-            p_table_enable=True,  # Enable table parsing
-            server_url=None,  # Server URL for vlm-http-client backend
-            f_dump_md=True,  # Whether to dump markdown files
-            f_dump_middle_json=True,  # Whether to dump middle JSON files
-            f_dump_model_output=True,  # Whether to dump model output files
-            f_dump_content_list=False,  # Whether to dump content list files
-            f_make_md_mode=MakeMode.MM_MD,  # The mode for making markdown content, default is MM_MD
-            start_page_id=0,  # Start page ID for parsing, default is 0
+            pdf_file_names: list[str],
+            pdf_bytes_list: list[bytes],
+            p_lang_list: list[str],
+            backend="pipeline",
+            parse_method="auto",
+            p_formula_enable=True,
+            p_table_enable=True,
+            server_url=None,
+            f_dump_md=True,
+            f_dump_middle_json=True,
+            f_dump_model_output=True,
+            f_dump_content_list=False,
+            f_make_md_mode=MakeMode.MM_MD,
+            start_page_id=0,
             end_page_id=None,
-            # End page ID for parsing, default is None (parse all pages until the end of the document)
             md_writer=None,
             image_writer=None,
-            mds_bucket="mds",  # 默认存储的bucket
-            predictor=None,  # 可以预加载vlm模型传入
+            mds_bucket="mds",
+            predictor=None,
     ):
-        md_content_list = []
-        if backend == "pipeline":
-            for idx, pdf_bytes in enumerate(pdf_bytes_list):
-                new_pdf_bytes = convert_pdf_bytes_to_bytes_by_pypdfium2(pdf_bytes, start_page_id, end_page_id)
-                pdf_bytes_list[idx] = new_pdf_bytes
+        """
+        解析 PDF 文件
+        """
+        # 预处理 PDF：截取指定页面范围
+        for idx, pdf_bytes in enumerate(pdf_bytes_list):
+            pdf_bytes_list[idx] = convert_pdf_bytes_to_bytes_by_pypdfium2(
+                pdf_bytes, start_page_id, end_page_id
+            )
 
-            infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = pipeline_doc_analyze(
+        if backend == "pipeline":
+            # Pipeline 后端处理
+            return _process_pipeline(
+                pdf_file_names,
                 pdf_bytes_list,
                 p_lang_list,
-                parse_method=parse_method,
-                formula_enable=p_formula_enable,
-                table_enable=p_table_enable)
-
-            for idx, model_list in enumerate(infer_results):
-                model_json = copy.deepcopy(model_list)
-                pdf_file_name = pdf_file_names[idx]
-
-                images_list = all_image_lists[idx]
-                pdf_doc = all_pdf_docs[idx]
-                _lang = lang_list[idx]
-                _ocr_enable = ocr_enabled_list[idx]
-                middle_json = pipeline_result_to_middle_json(model_list, images_list, pdf_doc, image_writer, _lang,
-                                                             _ocr_enable, p_formula_enable)
-                pdf_info = middle_json["pdf_info"]
-
-                if f_dump_md:
-                    md_content_str = pipeline_union_make(pdf_info, f_make_md_mode, "images")
-                    md_content_str = modify_markdown_image_urls(md_content_str, mds_bucket)
-                    md_content_list.append(md_content_str)
-                    md_writer.write_string(
-                        f"{pdf_file_name}.md",
-                        md_content_str,
-                    )
-                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True, backend=backend)
-                    md_content_with_pages = modify_markdown_image_urls(md_content_with_pages, mds_bucket)
-                    md_writer.write_string(
-                        f"{pdf_file_name}_pages.md",
-                        md_content_with_pages,
-                    )
-
-                if f_dump_content_list:
-                    content_list = pipeline_union_make(pdf_info, MakeMode.CONTENT_LIST, "images")
-                    md_writer.write_string(
-                        f"{pdf_file_name}_content_list.json",
-                        json.dumps(content_list, ensure_ascii=False, indent=4),
-                    )
-
-                if f_dump_middle_json:
-                    md_writer.write_string(
-                        f"{pdf_file_name}_middle.json",
-                        json.dumps(middle_json, ensure_ascii=False, indent=4),
-                    )
-
-                if f_dump_model_output:
-                    md_writer.write_string(
-                        f"{pdf_file_name}_model.json",
-                        json.dumps(model_json, ensure_ascii=False, indent=4),
-                    )
-
+                parse_method,
+                p_formula_enable,
+                p_table_enable,
+                md_writer,
+                image_writer,
+                mds_bucket,
+                f_dump_md,
+                f_dump_content_list,
+                f_dump_middle_json,
+                f_dump_model_output,
+                f_make_md_mode
+            )
         else:
-            if backend.startswith("vlm-"):
-                backend = backend[4:]
-            conf = read_config()
-            model_path = conf.get("models-dir", {}).get("vlm", '')
-            for idx, pdf_bytes in enumerate(pdf_bytes_list):
-                pdf_file_name = pdf_file_names[idx]
-                pdf_bytes = convert_pdf_bytes_to_bytes_by_pypdfium2(pdf_bytes, start_page_id, end_page_id)
-                middle_json, infer_result = vlm_doc_analyze(pdf_bytes, image_writer=image_writer, predictor=predictor, backend=backend,
-                                                             model_path=model_path, server_url=server_url)
-                pdf_info = middle_json["pdf_info"]
-
-                if f_dump_md:
-                    md_content_str = vlm_union_make(pdf_info, f_make_md_mode, "images")
-                    md_content_str = modify_markdown_image_urls(md_content_str, mds_bucket)
-                    md_content_list.append(md_content_str)
-                    md_writer.write_string(
-                        f"{pdf_file_name}.md",
-                        md_content_str,
-                    )
-                    md_content_with_pages = ParserService.convert_middle_json_to_markdown(middle_json, keep_page=True, p_formula_enable=p_formula_enable, p_table_enable=p_table_enable, backend=backend)
-                    md_content_with_pages = modify_markdown_image_urls(md_content_with_pages, mds_bucket)
-                    md_writer.write_string(
-                        f"{pdf_file_name}_pages.md",
-                        md_content_with_pages,
-                    )
-
-                if f_dump_content_list:
-                    content_list = vlm_union_make(pdf_info, MakeMode.CONTENT_LIST, "images")
-                    md_writer.write_string(
-                        f"{pdf_file_name}_content_list.json",
-                        json.dumps(content_list, ensure_ascii=False, indent=4),
-                    )
-
-                if f_dump_middle_json:
-                    md_writer.write_string(
-                        f"{pdf_file_name}_middle.json",
-                        json.dumps(middle_json, ensure_ascii=False, indent=4),
-                    )
-
-                if f_dump_model_output:
-                    md_writer.write_string(
-                        f"{pdf_file_name}_model.json",
-                        json.dumps(infer_result, ensure_ascii=False, indent=4),
-                    )
-        return md_content_list
+            # VLM 后端处理
+            return _process_vlm(
+                pdf_file_names,
+                pdf_bytes_list,
+                backend,
+                server_url,
+                p_formula_enable,
+                p_table_enable,
+                md_writer,
+                image_writer,
+                mds_bucket,
+                f_dump_md,
+                f_dump_content_list,
+                f_dump_middle_json,
+                f_dump_model_output,
+                f_make_md_mode,
+                predictor
+            )
 
     @staticmethod
     def convert_middle_json_to_markdown(middle_json: Dict[str, Any], keep_page: bool = True, p_formula_enable=True, p_table_enable=True, backend='pipeline') -> str:
@@ -476,16 +588,3 @@ class ParserService:
             file.status = FileStatus.PARSE_FAILED
             self.db.commit()
             raise Exception(f"Failed to queue parsing task: {str(e)}")
-
-
-if __name__ == "__main__":
-    test_file = '/home/lpdswing/projects/mineru-web/images/preview.png'
-    with open(test_file, 'rb') as f:
-        file_bytes = f.read()
-
-    ParserService.do_parse(
-        ['preview.png'],
-        [file_bytes],
-        p_lang_list=['ch'],
-
-    )

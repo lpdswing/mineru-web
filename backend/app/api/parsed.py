@@ -107,7 +107,6 @@ def export_content(
     # 获取 MinIO bucket
     buckets = get_buckets()
     mds_bucket = buckets[0]  # markdown 文件存储的 bucket
-    print(mds_bucket)
 
     # 构建文件名
     file_name = Path(file.minio_path).stem
