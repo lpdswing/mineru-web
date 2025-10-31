@@ -1,28 +1,18 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index
 from sqlalchemy.sql import func
 from app.models.base import Base
+from app.models.enums import FileStatus, BackendType
 from datetime import datetime
-import enum
-
-class FileStatus(enum.Enum):
-    PENDING = 'pending'
-    PARSING = 'parsing'
-    PARSED = 'parsed'
-    PARSE_FAILED = 'parse_failed'
-
-class BackendType(enum.Enum):
-    PIPELINE = 'pipeline'
-    VLM = 'vlm'
 
 class File(Base):
     __tablename__ = 'files'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(64), nullable=False, index=True)
-    filename = Column(String(256), nullable=False)
+    filename = Column(String(256), nullable=False, index=True)  # 添加索引用于搜索
     size = Column(Integer, nullable=False)
-    status = Column(Enum(FileStatus), default=FileStatus.PENDING)
-    upload_time = Column(DateTime, default=datetime.utcnow)
+    status = Column(Enum(FileStatus), default=FileStatus.PENDING, index=True)  # 添加索引用于过滤
+    upload_time = Column(DateTime, default=datetime.utcnow, index=True)  # 添加索引用于排序
     minio_path = Column(String(512), nullable=False)
     content_type = Column(String(64), nullable=True)
     version = Column(String(32), nullable=True)
@@ -31,6 +21,11 @@ class File(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     start_at = Column(DateTime(timezone=True), nullable=True)
     finish_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 复合索引：优化按用户ID和状态的查询
+    __table_args__ = (
+        Index('idx_user_status', 'user_id', 'status'),
+    )
 
     def to_dict(self):
         return {

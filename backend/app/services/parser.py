@@ -1,4 +1,5 @@
 import os
+import tempfile
 from typing import List, Dict, Any, Union, Tuple
 import sys
 import json
@@ -15,7 +16,8 @@ from mineru.utils.pdf_image_tools import images_bytes_to_pdf_bytes
 
 from app.utils.minio_client import minio_client, MINIO_BUCKET
 from app.models.parsed_content import ParsedContent
-from app.models.file import File as FileModel, FileStatus
+from app.models.file import File as FileModel
+from app.models.enums import FileStatus
 from sqlalchemy.orm import Session
 from mineru.data.data_reader_writer import DataWriter
 from mineru.data.data_reader_writer.s3 import S3DataWriter
