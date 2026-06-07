@@ -80,6 +80,34 @@ def test_parse_file_posts_zip_request_and_returns_bytes():
     assert result.content.startswith(b"PK")
 
 
+def test_parse_file_includes_server_url_when_configured():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        assert b"server_url" in body
+        assert b"http://mineru-vllm-server:30000" in body
+        return httpx.Response(
+            200,
+            content=make_zip_bytes(),
+            headers={"content-type": "application/zip"},
+        )
+
+    client = MineruApiClient(
+        base_url="http://mineru-api:8000",
+        server_url="http://mineru-vllm-server:30000",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    client.parse_file(
+        filename="sample.pdf",
+        file_bytes=b"%PDF",
+        backend="hybrid-http-client",
+        parse_method="auto",
+        lang="ch",
+        formula_enable=True,
+        table_enable=True,
+    )
+
+
 def test_parse_file_raises_on_non_success_status():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"detail": "boom"})

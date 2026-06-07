@@ -33,6 +33,7 @@ class MineruApiClient:
         poll_interval_seconds: float | None = None,
         task_timeout_seconds: float | None = None,
         use_async_tasks: bool | None = None,
+        server_url: str | None = None,
         http_client: httpx.Client | None = None,
     ):
         self.base_url = (base_url or os.getenv("MINERU_API_URL", "http://mineru-api:8000")).rstrip("/")
@@ -44,6 +45,7 @@ class MineruApiClient:
             if use_async_tasks is not None
             else os.getenv("MINERU_API_USE_ASYNC_TASKS", "0") == "1"
         )
+        self.server_url = server_url or os.getenv("SERVER_URL") or os.getenv("MINERU_API_SERVER_URL")
         self.http_client = http_client or httpx.Client(timeout=self.timeout_seconds)
 
     def health(self) -> dict[str, Any]:
@@ -148,7 +150,7 @@ class MineruApiClient:
         formula_enable: bool,
         table_enable: bool,
     ) -> dict[str, str]:
-        return {
+        data = {
             "backend": backend,
             "parse_method": parse_method,
             "lang": lang,
@@ -160,6 +162,9 @@ class MineruApiClient:
             "return_content_list": "true",
             "response_format_zip": "true",
         }
+        if self.server_url:
+            data["server_url"] = self.server_url
+        return data
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         try:
