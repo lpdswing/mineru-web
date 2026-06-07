@@ -52,6 +52,8 @@ def test_parse_file_posts_zip_request_and_returns_bytes():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/file_parse"
         body = request.read()
+        assert b'name="files"; filename="sample.pdf"' in body
+        assert b'name="lang_list"' in body
         assert b"response_format_zip" in body
         assert b"return_md" in body
         return httpx.Response(

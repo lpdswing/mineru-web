@@ -100,7 +100,7 @@ class MineruApiClient:
         table_enable: bool,
     ) -> MineruParseResult:
         data = self._form_data(backend, parse_method, lang, formula_enable, table_enable)
-        files = {"file": (filename, file_bytes, "application/octet-stream")}
+        files = {"files": (filename, file_bytes, "application/octet-stream")}
         response = self._request("post", "/file_parse", data=data, files=files)
         return MineruParseResult(
             filename=filename,
@@ -119,7 +119,7 @@ class MineruApiClient:
         table_enable: bool,
     ) -> MineruParseResult:
         data = self._form_data(backend, parse_method, lang, formula_enable, table_enable)
-        files = {"file": (filename, file_bytes, "application/octet-stream")}
+        files = {"files": (filename, file_bytes, "application/octet-stream")}
         submit = self._request("post", "/tasks", data=data, files=files).json()
         task_id = submit.get("task_id") or submit.get("id")
         if not task_id:
@@ -153,7 +153,7 @@ class MineruApiClient:
         data = {
             "backend": backend,
             "parse_method": parse_method,
-            "lang": lang,
+            "lang_list": lang,
             "formula_enable": str(formula_enable).lower(),
             "table_enable": str(table_enable).lower(),
             "return_md": "true",
