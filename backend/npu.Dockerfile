@@ -1,7 +1,9 @@
 # 基础镜像配置 vLLM 或 LMDeploy ，请根据实际需要选择其中一个，要求 ARM(AArch64) CPU + Ascend NPU。
 # Base image containing the vLLM inference environment, requiring ARM(AArch64) CPU + Ascend NPU.
 ARG NPU_BASE_IMAGE=quay.m.daocloud.io/ascend/vllm-ascend:v0.11.0rc2
+ARG MINERU_VERSION=3.2.3
 FROM ${NPU_BASE_IMAGE}
+ARG MINERU_VERSION=3.2.3
 # Base image containing the LMDeploy inference environment, requiring ARM(AArch64) CPU + Ascend NPU.
 # 指定 build arg NPU_BASE_IMAGE 可切换到 LMDeploy 镜像，例如：
 # docker build --build-arg NPU_BASE_IMAGE=crpi-4crprmm5baj1v8iv.cn-hangzhou.personal.cr.aliyuncs.com/lmdeploy_dlinfer/ascend:mineru-a2 .
@@ -27,6 +29,7 @@ COPY requirements.txt .
 # Install mineru latest
 RUN python3 -m pip install -U pip && \
     python3 -m pip install -r requirements.txt && \
+    python3 -m pip install "mineru[core]==${MINERU_VERSION}" && \
     python3 -m pip install numpy==1.26.4 \
                             opencv-python==4.11.0.86 \
                             && \

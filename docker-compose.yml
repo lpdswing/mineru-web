@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: lpdswing/mineru-web-frontend:v2.7.1
+    image: lpdswing/mineru-web-frontend:v3.2.3
     ports:
       - "8088:80"
     depends_on:
@@ -10,54 +10,37 @@ services:
       - mineru-network
 
   backend:
-    image: lpdswing/mineru-web-backend:v2.7.1
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    image: lpdswing/mineru-web-backend:v3.2.3
     environment:
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - DATABASE_URL=sqlite:///./mineru.db
-      # 按需配置
-      - BACKEND=vllm-client  # 只能用client，uvicorn无法在子进程加载vlm模型
-      # - MODEL_PATH=/models/vlm
+      - MINERU_API_URL=http://mineru-api:8000
       - SERVER_URL=http://mineru-vllm-server:30000
-      # - MINERU_TABLE_MERGE_ENABLE=0  # 关闭表格合并
     volumes:
       - ./backend:/app
       - ./mineru.json:/root/mineru.json
-      - ./models2.0:/models
     depends_on:
       redis:
         condition: service_healthy
       minio:
         condition: service_healthy
-      mineru-vllm-server:
+      mineru-api:
         condition: service_healthy
     networks:
       - mineru-network
 
   worker:
-    image: lpdswing/mineru-web-backend:v2.7.1
+    image: lpdswing/mineru-web-backend:v3.2.3
     deploy:
       # 设置 worker 副本数量，根据显存调整，多gpu可以手动拓展worker
       replicas: ${WORKER_REPLICAS:-1}
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['0']  # 指定使用 0 号 GPU
-              capabilities: [gpu]
     command: python3 run_worker.py
     environment:
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - DATABASE_URL=sqlite:///./mineru.db
-      # 按需配置
+      - MINERU_API_URL=http://mineru-api:8000
       - SERVER_URL=http://mineru-vllm-server:30000  # vllm server服务地址
       # WORKER_ID 由代码自动使用容器 hostname 生成，无需手动配置
       # - MINERU_TABLE_MERGE_ENABLE=0  # 关闭表格合并
@@ -68,14 +51,88 @@ services:
     volumes:
       - ./backend:/app
       - ./mineru.json:/root/mineru.json
-      - ./models2.0:/models
     depends_on:
       redis:
         condition: service_healthy
       minio:
         condition: service_healthy
+      mineru-api:
+        condition: service_healthy
+    networks:
+      - mineru-network
+
+  mineru-api:
+    image: lpdswing/mineru-web-mineru-api:v3.2.3
+    container_name: mineru-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      MINERU_MODEL_SOURCE: local
+      MINERU_API_OUTPUT_ROOT: /output
+    entrypoint: mineru-api
+    command:
+      --host 0.0.0.0
+      --port 8000
+      --allow-public-http-client
+    volumes:
+      - ./mineru.json:/root/mineru.json
+      - ./models2.0:/models
+      - mineru_api_output:/output
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    depends_on:
       mineru-vllm-server:
         condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    networks:
+      - mineru-network
+
+  mineru-vllm-server:
+    image: lpdswing/mineru-web-mineru-api:v3.2.3
+    container_name: mineru-vllm-server
+    restart: always
+    ports:
+      - "30000:30000"
+    environment:
+      MINERU_MODEL_SOURCE: local
+    entrypoint: mineru-vllm-server
+    command:
+      --host 0.0.0.0
+      --port 30000
+      --gpu-memory-utilization 0.5
+    volumes:
+      - ./mineru.json:/root/mineru.json
+      - ./models2.0:/models
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:30000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
     networks:
       - mineru-network
 
@@ -118,6 +175,7 @@ services:
 volumes:
   minio_data:
   redis_data:
+  mineru_api_output:
 
 networks:
   mineru-network:

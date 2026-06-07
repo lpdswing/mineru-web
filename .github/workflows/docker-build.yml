@@ -19,6 +19,11 @@ on:
         required: true
         type: boolean
         default: false
+      build_mineru_api:
+        description: 'Build MinerU API image'
+        required: true
+        type: boolean
+        default: true
       build_frontend:
         description: 'Build frontend image'
         required: true
@@ -47,6 +52,7 @@ env:
   BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-backend
   FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-frontend
   BACKEND_NPU_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-backend-npu
+  MINERU_API_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-mineru-api
   BACKEND_NPU_BASE_IMAGE: quay.m.daocloud.io/ascend/vllm-ascend:v0.11.0rc2
   # 动态设置版本：如果是release触发，使用release的标签名；否则使用手动输入的版本
   VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
@@ -105,6 +111,13 @@ jobs:
           images: ${{ env.FRONTEND_IMAGE }}
           tags: type=raw,value=${{ env.VERSION }}
 
+      - name: Generate MinerU API image metadata
+        id: meta_mineru_api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.MINERU_API_IMAGE }}
+          tags: type=raw,value=${{ env.VERSION }}
+
       - name: Free up disk space
         run: |
           echo "Before cleanup:"
@@ -153,6 +166,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false # 保持与您原来设置一致
+
+      - name: Build and push MinerU API image
+        if: ${{ github.event_name == 'release' || inputs.build_mineru_api }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/mineru-api.Dockerfile
+          platforms: ${{ steps.set-platforms.outputs.platforms }}
+          push: true
+          tags: ${{ steps.meta_mineru_api.outputs.tags }}
+          labels: ${{ steps.meta_mineru_api.outputs.labels }}
+          build-args: |
+            MINERU_VERSION=3.2.3
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
 
       - name: Build and push frontend image
         if: ${{ github.event_name == 'release' || inputs.build_frontend }}

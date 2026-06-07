@@ -5,7 +5,7 @@
 services:
 
   mineru-vllm-server:
-    image: lpdswing/mineru-web-backend-npu:v2.7.1
+    image: lpdswing/mineru-web-backend-npu:v3.2.3
     container_name: mineru-vllm-server
     restart: always
     ports:
@@ -17,12 +17,11 @@ services:
       - /dev/davinci_manager:/dev/davinci_manager
       - /dev/devmm_svm:/dev/devmm_svm
       - /dev/hisi_hdc:/dev/hisi_hdc
-    volumes:
-      - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
     environment:
       MINERU_MODEL_SOURCE: local
     entrypoint: mineru-vllm-server
     volumes:
+      - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
       - ./mineru.json:/root/mineru.json
       - ./models2.0:/models
     command:
@@ -42,3 +41,7 @@ services:
       - mineru-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:30000/health || exit 1"]
+
+networks:
+  mineru-network:
+    driver: bridge
