@@ -1,5 +1,10 @@
-mineru[core]
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+python-multipart==0.0.20
+loguru==0.7.3
 alembic==1.16.1
 minio==7.2.15
 SQLAlchemy==2.0.41
 redis
+httpx==0.28.1
+pytest==8.4.0
