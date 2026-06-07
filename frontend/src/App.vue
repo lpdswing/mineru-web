@@ -88,7 +88,7 @@ const sidebarHover = ref(false)
         <div class="version-badge">
           <span class="version-dot"></span>
           <transition name="fade">
-            <span v-show="sidebarHover" class="version-text">v2.7.1</span>
+            <span v-show="sidebarHover" class="version-text">v3.2.3</span>
           </transition>
         </div>
       </div>

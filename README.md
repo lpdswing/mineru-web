@@ -217,6 +217,18 @@ mineru-web/
 
 ## 📝 更新日志
 
+### [3.2.3] - 2026-06-07
+
+- 后端
+  - 适配 MinerU 3.2.3，解析入口切换为官方 MinerU API sidecar
+  - 保留 MinIO/S3 图片与 Markdown 转存能力
+  - 新增 MinerU API 健康状态接口
+  - 后端业务镜像轻量化，不再直接依赖 MinerU 内部 Python API
+
+- 前端
+  - 设置页增加解析服务状态展示
+  - 文件列表解析失败时展示更明确的失败原因
+
 ### [2.2.2] - 2025-09-18
 
 - 后端
@@ -258,4 +270,3 @@ mineru-web/
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=lpdswing/mineru-web&type=Timeline" />
  </picture>
 </a>
-
