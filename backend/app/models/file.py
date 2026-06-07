@@ -17,6 +17,7 @@ class File(Base):
     content_type = Column(String(64), nullable=True)
     version = Column(String(32), nullable=True)
     backend = Column(Enum(BackendType), default=BackendType.PIPELINE)
+    error_message = Column(String(1024), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     start_at = Column(DateTime(timezone=True), nullable=True)
@@ -39,6 +40,7 @@ class File(Base):
             'content_type': self.content_type,
             'version': self.version,
             'backend': self.backend.value if self.backend else BackendType.PIPELINE.value,
+            'error_message': self.error_message,
             'start_at': self.start_at.isoformat() if self.start_at else None,
             'finish_at': self.finish_at.isoformat() if self.finish_at else None
         }
