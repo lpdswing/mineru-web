@@ -14,6 +14,7 @@ export interface FileItem {
   finish_at?: string
   status: FileStatus
   backend?: BackendType
+  error_message?: string | null
 }
 
 // 导出格式类型

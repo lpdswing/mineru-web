@@ -101,7 +101,14 @@
             <template #default="{ row }">
               <div class="status-cell">
                 <span class="status-dot" :class="getStatusClass(row.status)"></span>
-                <span>{{ getStatusText(row.status) }}</span>
+                <el-tooltip
+                  v-if="row.status === 'parse_failed' && row.error_message"
+                  :content="row.error_message"
+                  placement="top"
+                >
+                  <span class="status-error-text">{{ getStatusText(row.status) }}</span>
+                </el-tooltip>
+                <span v-else>{{ getStatusText(row.status) }}</span>
               </div>
             </template>
           </el-table-column>

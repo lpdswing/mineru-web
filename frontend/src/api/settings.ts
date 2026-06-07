@@ -14,6 +14,15 @@ export interface SettingsResponse extends SettingsData {
   user_id: string
 }
 
+export interface MineruHealthResponse {
+  available: boolean
+  base_url: string
+  status?: string
+  version?: string
+  error?: string
+  [key: string]: unknown
+}
+
 // 设置 API
 export const settingsApi = {
   /**
@@ -29,6 +38,11 @@ export const settingsApi = {
    */
   updateSettings(settings: SettingsData & { user_id: string }) {
     return api.put('/settings', settings)
+      .then(res => res.data)
+  },
+
+  getMineruHealth() {
+    return api.get<MineruHealthResponse>('/system/mineru-health')
       .then(res => res.data)
   }
 }

@@ -99,6 +99,34 @@
             </el-form-item>
           </div>
 
+          <div class="form-section">
+            <div class="section-title">
+              <el-icon><Connection /></el-icon>
+              <span>解析服务状态</span>
+            </div>
+
+            <div v-if="mineruHealth" class="health-grid">
+              <div class="health-row">
+                <span class="health-label">服务地址</span>
+                <span class="health-value">{{ mineruHealth.base_url || '-' }}</span>
+              </div>
+              <div class="health-row">
+                <span class="health-label">状态</span>
+                <el-tag :type="mineruHealth.available ? 'success' : 'danger'">
+                  {{ mineruHealth.available ? '可用' : '不可用' }}
+                </el-tag>
+              </div>
+              <div v-if="mineruHealth.version" class="health-row">
+                <span class="health-label">MinerU 版本</span>
+                <span class="health-value">{{ mineruHealth.version }}</span>
+              </div>
+              <div v-if="mineruHealth.error" class="health-row">
+                <span class="health-label">错误</span>
+                <span class="health-value error">{{ mineruHealth.error }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 操作按钮 -->
           <div class="form-actions">
             <el-button @click="resetSettings" size="large">
@@ -119,9 +147,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check } from '@element-plus/icons-vue'
+import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check, Connection } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { getUserId } from '@/utils/user'
+import type { MineruHealthResponse } from '@/api/settings'
 
 interface Settings {
   forceOcr: boolean
@@ -142,6 +171,7 @@ const defaultSettings: Settings = {
 }
 
 const settings = ref<Settings>({ ...defaultSettings })
+const mineruHealth = ref<MineruHealthResponse | null>(null)
 
 const loadSettings = async () => {
   try {
@@ -177,8 +207,21 @@ const resetSettings = () => {
   ElMessage.info('设置已重置')
 }
 
+const loadMineruHealth = async () => {
+  try {
+    mineruHealth.value = await settingsApi.getMineruHealth()
+  } catch (error) {
+    mineruHealth.value = {
+      available: false,
+      base_url: '',
+      error: '无法获取 MinerU API 状态'
+    }
+  }
+}
+
 onMounted(() => {
   loadSettings()
+  loadMineruHealth()
 })
 </script>
 
@@ -305,6 +348,35 @@ onMounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.health-grid {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.health-label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.health-value {
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.health-value.error {
+  color: var(--danger-color);
 }
 
 .form-actions {
