@@ -80,7 +80,27 @@ curl http://localhost:8000/api/system/mineru-health
 mineru-router --host 0.0.0.0 --port 8002 --local-gpus auto --allow-public-http-client
 ```
 
-`mineru-router` 的作用是提供一个稳定的 HTTP 入口，并管理/转发到本地 MinerU worker。多 GPU 环境下，`--local-gpus auto` 让 router 自动发现可用 GPU 并启动本地 worker，比在仓库中维护独立 vLLM/NPU compose 更少分叉。
+`mineru-router` 的作用是提供一个稳定的 HTTP 入口，并管理/转发到本地 MinerU worker。默认 `docker-compose.yml` 不绑定 NVIDIA GPU 设备，因此可以在无 GPU 或非 NVIDIA 环境解析配置并启动业务链路。多 GPU 环境下，如果容器运行时已经把 GPU 暴露给 parser 容器，`--local-gpus auto` 会自动发现可用 GPU 并启动本地 worker，比在仓库中维护独立 vLLM/NPU compose 更少分叉。
+
+NVIDIA 多 GPU 服务器可以使用本地 override 暴露所有 GPU，例如：
+
+```yaml
+services:
+  mineru-router:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+保存为 `docker-compose.gpu.local.yml` 后启动：
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.gpu.local.yml up -d
+```
 
 `backend/mineru-api.Dockerfile` 按 MinerU 3.2.3 官方 Docker 部署思路维护，并用于发布 `linux/amd64` / `linux/arm64` 镜像：
 
