@@ -21,14 +21,14 @@ def test_health_returns_normalized_payload():
         return httpx.Response(200, json={"status": "healthy", "version": "3.2.3"})
 
     client = MineruApiClient(
-        base_url="http://mineru-api:8000",
+        base_url="http://mineru-router:8002",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
     result = client.health()
 
     assert result["available"] is True
-    assert result["base_url"] == "http://mineru-api:8000"
+    assert result["base_url"] == "http://mineru-router:8002"
     assert result["status"] == "healthy"
     assert result["version"] == "3.2.3"
 
@@ -38,7 +38,7 @@ def test_health_handles_unavailable_service():
         raise httpx.ConnectError("refused", request=request)
 
     client = MineruApiClient(
-        base_url="http://mineru-api:8000",
+        base_url="http://mineru-router:8002",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -63,7 +63,7 @@ def test_parse_file_posts_zip_request_and_returns_bytes():
         )
 
     client = MineruApiClient(
-        base_url="http://mineru-api:8000",
+        base_url="http://mineru-router:8002",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -86,7 +86,7 @@ def test_parse_file_includes_server_url_when_configured():
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read()
         assert b"server_url" in body
-        assert b"http://mineru-vllm-server:30000" in body
+        assert b"http://openai-compatible-server:30000" in body
         return httpx.Response(
             200,
             content=make_zip_bytes(),
@@ -94,8 +94,8 @@ def test_parse_file_includes_server_url_when_configured():
         )
 
     client = MineruApiClient(
-        base_url="http://mineru-api:8000",
-        server_url="http://mineru-vllm-server:30000",
+        base_url="http://mineru-router:8002",
+        server_url="http://openai-compatible-server:30000",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -115,7 +115,7 @@ def test_parse_file_raises_on_non_success_status():
         return httpx.Response(500, json={"detail": "boom"})
 
     client = MineruApiClient(
-        base_url="http://mineru-api:8000",
+        base_url="http://mineru-router:8002",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 

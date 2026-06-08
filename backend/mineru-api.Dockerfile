@@ -25,6 +25,7 @@ RUN /bin/bash -c "mineru-models-download -s ${MINERU_MODEL_SOURCE} -m all"
 WORKDIR /app
 
 EXPOSE 8000
+EXPOSE 8002
 
 ENTRYPOINT ["/bin/bash", "-c", "export MINERU_MODEL_SOURCE=local && exec \"$@\"", "--"]
-CMD ["mineru-api", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["mineru-router", "--host", "0.0.0.0", "--port", "8002", "--local-gpus", "auto", "--allow-public-http-client"]

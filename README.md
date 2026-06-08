@@ -1,297 +1,89 @@
 # MinerU Web
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Python-3.10-blue" alt="Python 3.10">
-  <img src="https://img.shields.io/badge/Vue-3-green" alt="Vue 3">
-  <img src="https://img.shields.io/badge/License-AGPL--3.0-yellow" alt="License">
-  <img src="https://img.shields.io/badge/Docker-Ready-blue" alt="Docker Ready">
-</div>
+MinerU Web 是一个面向文档解析的 Web 应用，提供文件上传、异步解析、解析结果预览、Markdown 导出和原文件预览能力。当前版本适配 MinerU 3.2.3，业务后端通过官方 MinerU HTTP 服务解析文件，不再直接依赖 MinerU 内部 Python API。
 
-## 🌟 项目简介
+## 特性
 
-MinerU Web 是一个现代化的文档智能处理平台，基于先进的 AI 技术，提供文档解析、信息提取和智能分析功能。本项目采用前后端分离架构，结合容器化技术，为用户提供高效、可靠的文档处理解决方案。
+- FastAPI + Vue 3 前后端分离
+- Redis 队列异步解析
+- MinIO/S3 存储原文件、Markdown 和图片资源
+- 解析服务状态检测
+- 支持 MinerU 3.2.3 官方 backend 选项
+- 业务 backend / worker / frontend 可构建多架构镜像
+- Linux 服务器部署使用 `mineru-router`，适合多 GPU 环境统一调度
+- macOS Apple Silicon 可在宿主机启动 MinerU API，Docker 只运行业务服务
 
-## ✨ 核心特性
+## 快速开始
 
-- 🚀 **高性能架构**：基于 FastAPI 和 Vue 3 构建，提供卓越的性能和用户体验
-- 🤖 **AI 驱动**：集成先进的 AI 模型，实现智能文档解析和信息提取
-- 📊 **多格式支持**：支持 PDF、Word、Excel 等多种文档格式的处理
-- 🔄 **异步处理**：采用异步任务队列，支持大规模文档并发处理
-- 🛡️ **安全可靠**：完善的权限控制和数据加密机制
-- 🐳 **容器化部署**：提供完整的 Docker 支持，一键部署
-- 🌐 **跨平台**：支持多种硬件架构，包括 x86_64 和 ARM64
-- 🎯 **多硬件加速**：支持 NVIDIA GPU 和华为昇腾 NPU
+准备环境变量：
 
-## 🛠️ 技术栈
-
-### 后端
-- FastAPI：高性能异步 Web 框架
-- Redis：分布式缓存和任务队列
-- MinIO：高性能对象存储
-- SQLite：轻量级数据库
-- Docker：容器化部署
-
-### 前端
-- Vue 3：渐进式 JavaScript 框架
-- Element Plus：企业级 UI 组件库
-- TypeScript：类型安全的 JavaScript 超集
-- Vite：下一代前端构建工具
-
-## 🚀 快速开始
-
-### 前置准备
-
-1. 下载模型文件：
 ```bash
-# 克隆项目
-git clone https://github.com/lpdswing/mineru-web.git
-cd mineru-web
-
-# 下载模型文件
-# 更新为2.0模型
-python download_models.py modelscope
-或
-python download_models.py huggingface
-```
-
-2. 配置 MinIO 地址：
-```bash
-# 复制环境变量模板
 cp .env.example .env
-
-# 编辑 .env 文件，修改 MinIO 地址
-MINIO_ENDPOINT=your-minio-address:9000
 ```
 
-3. 配置mineru.json
+编辑 `.env`，设置一个浏览器和容器都能访问的 MinIO 地址，例如：
 
 ```bash
-# 复制mineru配置文件模板
-cp mineru.example.json mineru.json
-
-# 修改endpoint
-    "bucket_info": {
-        "mds": [
-            "minioadmin",
-            "minioadmin",
-            "http://your-minio-address:9000"
-        ]
-    },
-
+MINIO_ENDPOINT=SERVER_IP:9000
+WORKER_REPLICAS=1
 ```
 
-### 使用 Docker Compose 部署
+Linux 服务器、macOS Apple Silicon、模型下载、MinerU Router、多 GPU、MinIO 地址和验证命令见：[部署文档](docs/deployment.md)。
 
-#### 方式一：NVIDIA GPU 环境部署（x86_64）
-
-```bash
-# 启动服务
-# 默认不启动vlm服务
-docker-compose up -d
-# 启动vlm服务
-docker-compose -f docker-compose.yml -f docker-compose.vllm.yaml up -d
-
-# 参考以下网址安装mc
-https://min.io/docs/minio/linux/reference/minio-mc.html
-
-# 添加minio的alias
-# 更新minio镜像后非必须，可以从页面吧mds设为public
-mc alias set local http://localhost:9000 minioadmin minioadmin
-
-# 设置mds桶为public
-mc anonymous set download local/mds
-
-```
-
-#### 方式二：华为昇腾 NPU 环境部署（ARM64）
-
-适用于华为昇腾 NPU 硬件环境（ARM64 + Ascend NPU）
-
-**前置要求**：
-- ARM64 架构服务器
-- 华为昇腾 NPU 驱动已安装（通常在 `/usr/local/Ascend/driver`）
-- 确保 NPU 设备可访问：`/dev/davinci*`, `/dev/davinci_manager`, `/dev/devmm_svm`, `/dev/hisi_hdc`
-
-```bash
-# 启动服务
-# 默认不启动vlm服务
-docker-compose -f docker-compose.npu.yml up -d
-
-# 启动vlm服务
-docker-compose -f docker-compose.npu.yml -f docker-compose.vllm.npu.yaml up -d
-
-# 参考以下网址安装mc
-https://min.io/docs/minio/linux/reference/minio-mc.html
-
-# 添加minio的alias
-mc alias set local http://localhost:9000 minioadmin minioadmin
-
-# 设置mds桶为public
-mc anonymous set download local/mds
-
-# 查看NPU使用情况
-npu-smi info
-```
-
-**注意事项**：
-- NPU 版本使用 `lpdswing/mineru-web-backend-npu` 镜像
-- Redis 和 MinIO 镜像会自动使用 ARM64 版本（官方镜像支持多架构）
-- 根据 NPU 显存大小调整 worker 副本数量（环境变量 `WORKER_REPLICAS`）
-
-#### 方式三：macOS Apple Silicon / M 系列本机推理
-
-MinerU 的 Docker 部署面向 Linux GPU/NPU 环境。macOS Docker 容器无法直接使用 Apple M 系列的 MPS/MLX 加速能力，因此 Mac 推荐将 MinerU API 跑在宿主机，业务服务继续用 Docker Compose 运行。
-
-1. 在宿主机启动 MinerU API：
-
-```bash
-MINERU_MODEL_SOURCE=modelscope uv run --python 3.13 --with 'mineru[all]==3.2.3' \
-  mineru-api --host 127.0.0.1 --port 18000 --allow-public-http-client
-```
-
-2. 启动 Mac 专用 Docker 环境：
-
-```bash
-docker compose -f docker-compose.mac.yml up -d --build
-```
-
-3. 验证 MinerU API 连通性：
-
-```bash
-curl http://localhost:8000/api/system/mineru-health
-```
-
-Mac 专用 Compose 中，backend/worker 会通过 `http://host.docker.internal:18000` 访问宿主机 MinerU API，从而保留 M 系列本机推理能力。
-
-
-
-### 界面展示
+## 界面展示
 
 <div align="center">
   <img src="images/home.png" alt="首页" width="800">
   <p>首页 - 展示系统概览和快速操作</p>
-  
+
   <img src="images/files.png" alt="文件管理" width="800">
   <p>文件管理 - 支持多种文档格式的上传和管理</p>
-  
+
   <img src="images/preview.png" alt="文档预览" width="800">
   <p>文档预览 - 智能解析和展示文档内容</p>
-  
+
   <img src="images/setting.png" alt="系统设置" width="800">
-  <p>系统设置 - 后端选择</p>
+  <p>系统设置 - 后端选择与解析服务状态</p>
 </div>
 
-### 本地开发环境
+## 项目结构
 
-```bash
-# 启动本地开发环境
-docker-compose -f docker-compose.local.yml up -d
-```
-
-## 📦 项目结构
-
-```
+```text
 mineru-web/
-├── backend/                          # 后端服务
-│   ├── app/                         # 应用代码
-│   ├── tests/                       # 测试用例
-│   ├── Dockerfile                   # 后端 Docker 配置（NVIDIA GPU）
-│   └── npu.Dockerfile               # 后端 Docker 配置（华为昇腾 NPU）
-├── frontend/                        # 前端应用
-│   ├── src/                        # 源代码
-│   ├── public/                     # 静态资源
-│   └── Dockerfile                  # 前端 Docker 配置
-├── models/                         # AI 模型文件
-├── magic-pdf.json                  # 模型配置文件
-├── docker-compose.yml              # 生产环境配置（NVIDIA GPU）
-├── docker-compose.npu.yml          # 生产环境配置（华为昇腾 NPU）
-├── docker-compose.vllm.yaml        # vLLM 服务配置（NVIDIA GPU）
-├── docker-compose.vllm.npu.yaml    # vLLM 服务配置（华为昇腾 NPU）
-├── docker-compose.local.yml        # 开发环境配置
-└── README.md                       # 项目文档
+├── backend/                  # FastAPI 后端、worker、数据库模型和测试
+├── frontend/                 # Vue 3 前端
+├── docs/
+│   └── deployment.md         # 部署说明
+├── docker-compose.yml        # Linux / 服务器部署
+├── docker-compose.mac.yml    # macOS 宿主机 MinerU API 部署
+└── README.md
 ```
 
-## 🔧 配置说明
+## 配置
 
-### 环境变量
+常用环境变量见 [.env.example](.env.example)，完整说明见：[部署文档](docs/deployment.md#环境变量)。
 
-- `REDIS_HOST`：Redis 服务器地址
-- `MINIO_ENDPOINT`：MinIO 服务器地址
-- `DATABASE_URL`：数据库连接 URL
+## 测试
 
-### 端口说明
+验证命令见：[部署文档](docs/deployment.md#验证命令)。
 
-- 8088：Web 界面
-- 8000：后端 API
-- 9000：MinIO API
-- 9001：MinIO 控制台
-- 6379：Redis
+## 更新日志
 
-## 🤝 贡献指南
+### 3.2.3
 
-我们欢迎各种形式的贡献，包括但不限于：
+- 适配 MinerU 3.2.3 官方 HTTP API
+- 解析入口切换到 sidecar / router 模式
+- 保留 MinIO/S3 图片与 Markdown 转存能力
+- 业务 backend / worker 移除 MinerU 内部依赖
+- 设置页增加解析服务状态展示
+- backend 类型适配官方 3.2.3 backend 参数
 
-- 提交问题和建议
-- 提交代码改进
-- 改进文档
-- 分享使用经验
+## 开源协议
 
-## 📄 开源协议
+本项目采用 AGPL-3.0 协议开源，详情参见 [LICENSE](LICENSE)。
 
-本项目采用 AGPL-3.0 协议开源，详情请参见 [LICENSE](LICENSE) 文件。
+## 致谢
 
-## 📝 更新日志
-
-### [3.2.3] - 2026-06-07
-
-- 后端
-  - 适配 MinerU 3.2.3，解析入口切换为官方 MinerU API sidecar
-  - 保留 MinIO/S3 图片与 Markdown 转存能力
-  - 新增 MinerU API 健康状态接口
-  - 后端业务镜像轻量化，不再直接依赖 MinerU 内部 Python API
-
-- 前端
-  - 设置页增加解析服务状态展示
-  - 文件列表解析失败时展示更明确的失败原因
-
-### [2.2.2] - 2025-09-18
-
-- 后端
-  - 适配mineru2.2.2版本
-  - 删除无用依赖
-  - 增加文件解析时间信息
-  - 更新docker base镜像
-
-- 前端
-  - 文件列表页增加批量删除功能
-  - 增加解析开始结束时间展示
-
-### [2.0.0] - 2025-07-07
-- 后端
-  - 适配Mineru 2.1.0版本
-  - 更新模型下载脚本
-  - 更新设置支持pipeline和vlm-*动态更新
-  - 后端支持预加载vlm模型
-- 前端
-  - 更换markdown显示插件为mark-it-down,支持公式展示
-  - 文件列表增加backend标签
-
-
-
-## 🌟 致谢
-
-- [Mineru](https://github.com/opendatalab/MinerU)
-- [fastapi](https://github.com/fastapi/fastapi)
-- [vue3](https://github.com/vuejs/core)
----
-
-
-## 📈 Star 趋势
-
-<a href="https://www.star-history.com/#lpdswing/mineru-web&Timeline">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lpdswing/mineru-web&type=Timeline&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lpdswing/mineru-web&type=Timeline" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=lpdswing/mineru-web&type=Timeline" />
- </picture>
-</a>
+- [MinerU](https://github.com/opendatalab/MinerU)
+- [FastAPI](https://github.com/fastapi/fastapi)
+- [Vue](https://github.com/vuejs/core)

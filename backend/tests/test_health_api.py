@@ -8,7 +8,7 @@ def test_mineru_health_endpoint(monkeypatch):
         def health(self):
             return {
                 "available": True,
-                "base_url": "http://mineru-api:8000",
+                "base_url": "http://mineru-router:8002",
                 "status": "healthy",
             }
 
@@ -19,4 +19,4 @@ def test_mineru_health_endpoint(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["available"] is True
-    assert response.json()["base_url"] == "http://mineru-api:8000"
+    assert response.json()["base_url"] == "http://mineru-router:8002"

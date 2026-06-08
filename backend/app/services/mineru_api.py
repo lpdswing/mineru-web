@@ -36,7 +36,7 @@ class MineruApiClient:
         server_url: str | None = None,
         http_client: httpx.Client | None = None,
     ):
-        self.base_url = (base_url or os.getenv("MINERU_API_URL", "http://mineru-api:8000")).rstrip("/")
+        self.base_url = (base_url or os.getenv("MINERU_API_URL", "http://mineru-router:8002")).rstrip("/")
         self.timeout_seconds = timeout_seconds or float(os.getenv("MINERU_API_TIMEOUT_SECONDS", "300"))
         self.poll_interval_seconds = poll_interval_seconds or float(os.getenv("MINERU_API_POLL_INTERVAL_SECONDS", "2"))
         self.task_timeout_seconds = task_timeout_seconds or float(os.getenv("MINERU_API_TASK_TIMEOUT_SECONDS", "1800"))
