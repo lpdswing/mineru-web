@@ -1,10 +1,12 @@
 import traceback
+from io import BytesIO
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from pathlib import Path
 from app.database import get_db
 from app.models.file import File as FileModel
 from app.models.enums import FileStatus
+from app.models.parsed_content import ParsedContent
 from app.services.parser import ParserService, get_buckets
 from app.utils.minio_client import get_presigned_url, minio_client
 from app.utils.user_dep import get_user_id
@@ -117,7 +119,24 @@ def export_content(
     try:
         minio_client.stat_object(mds_bucket, output_path)
     except Exception:
-        raise HTTPException(status_code=404, detail="导出文件不存在")
+        if format != 'markdown':
+            raise HTTPException(status_code=404, detail="导出文件不存在")
+
+        parsed_content = db.query(ParsedContent).filter(
+            ParsedContent.file_id == file_id,
+            ParsedContent.user_id == user_id,
+        ).first()
+        if not parsed_content or not parsed_content.content:
+            raise HTTPException(status_code=404, detail="导出文件不存在")
+
+        content = parsed_content.content.encode("utf-8")
+        minio_client.put_object(
+            mds_bucket,
+            output_path,
+            BytesIO(content),
+            len(content),
+            content_type="text/markdown; charset=utf-8",
+        )
 
     # 生成下载URL
     download_url = get_presigned_url(mds_bucket, output_path, expires=3600)
