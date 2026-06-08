@@ -27,13 +27,13 @@
                 <div class="switch-wrapper">
                   <el-switch
                     v-model="settings.forceOcr"
-                    :disabled="settings.backend !== 'pipeline'"
+                    :disabled="!supportsParseMethod"
                   />
                   <span class="switch-label">{{ settings.forceOcr ? '已开启' : '已关闭' }}</span>
                 </div>
-                <div v-if="settings.backend !== 'pipeline'" class="form-tip">
+                <div v-if="!supportsParseMethod" class="form-tip">
                   <el-icon><InfoFilled /></el-icon>
-                  <span>仅 Pipeline 模式支持此选项</span>
+                  <span>仅 Pipeline / Hybrid 模式支持此选项</span>
                 </div>
               </el-form-item>
 
@@ -93,7 +93,9 @@
             <el-form-item label="选择引擎">
               <el-select v-model="settings.backend" class="full-width">
                 <el-option label="Pipeline" value="pipeline" />
+                <el-option label="VLM Auto Engine" value="vlm-auto-engine" />
                 <el-option label="VLM HTTP Client" value="vlm-http-client" />
+                <el-option label="Hybrid Auto Engine" value="hybrid-auto-engine" />
                 <el-option label="Hybrid HTTP Client" value="hybrid-http-client" />
               </el-select>
             </el-form-item>
@@ -145,12 +147,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check, Connection } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { getUserId } from '@/utils/user'
-import type { MineruHealthResponse } from '@/api/settings'
+import type { MineruBackend, MineruHealthResponse } from '@/api/settings'
 
 interface Settings {
   forceOcr: boolean
@@ -158,7 +160,7 @@ interface Settings {
   formulaRecognition: boolean
   tableRecognition: boolean
   version: string
-  backend: 'pipeline' | 'vlm-http-client' | 'hybrid-http-client'
+  backend: MineruBackend
 }
 
 const defaultSettings: Settings = {
@@ -167,11 +169,14 @@ const defaultSettings: Settings = {
   formulaRecognition: true,
   tableRecognition: true,
   version: '',
-  backend: 'hybrid-http-client'
+  backend: 'pipeline'
 }
 
 const settings = ref<Settings>({ ...defaultSettings })
 const mineruHealth = ref<MineruHealthResponse | null>(null)
+const supportsParseMethod = computed(() => {
+  return settings.value.backend === 'pipeline' || settings.value.backend.startsWith('hybrid-')
+})
 
 const loadSettings = async () => {
   try {

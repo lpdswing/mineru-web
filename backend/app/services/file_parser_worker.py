@@ -7,7 +7,6 @@ sys.path.append(PROJECT_ROOT)
 
 import json
 import time
-import torch
 import gc
 import uuid
 import socket
@@ -22,9 +21,6 @@ from app.services.parser import ParserService
 
 
 def clean_memory():
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
     gc.collect()
 
 # 批处理文件数
@@ -150,4 +146,4 @@ def run_worker():
         clean_memory()
 
 if __name__ == "__main__":
-    run_worker() 
+    run_worker()

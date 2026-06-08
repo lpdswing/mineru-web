@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.settings import Settings
-from app.models.enums import SettingsBackendType
+from app.models.enums import DEFAULT_MINERU_BACKEND, validate_mineru_backend
 from app.utils.user_dep import get_user_id
 
 router = APIRouter()
@@ -21,7 +21,7 @@ def get_settings(
             force_ocr=False,
             table_recognition=True,
             formula_recognition=True,
-            backend=SettingsBackendType.PIPELINE
+            backend=DEFAULT_MINERU_BACKEND
         )
 
     result = settings.to_dict()
@@ -42,7 +42,7 @@ def update_settings(
         if hasattr(db_settings, key):
             if key == "backend":
                 try:
-                    setattr(db_settings, key, SettingsBackendType(value))  # 字符串转 Enum
+                    setattr(db_settings, key, validate_mineru_backend(value))
                 except ValueError:
                     raise HTTPException(status_code=400, detail=f"Invalid backend type: {value}")
             else:

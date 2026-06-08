@@ -31,7 +31,7 @@ def read_config() -> dict[str, Any]:
         if local_config.exists():
             config_path = local_config
     if not config_path.exists():
-        raise FileNotFoundError(f"未找到 MinerU 配置文件: {config_path}")
+        return {}
     with config_path.open("r", encoding="utf-8") as file:
         return json.load(file)
 
@@ -41,7 +41,14 @@ def get_s3_config(bucket: str) -> tuple[str, str, str]:
     bucket_info = config.get("bucket_info", {})
     values = bucket_info.get(bucket)
     if not values or len(values) < 3:
-        raise ValueError(f"未找到 bucket 配置信息: {bucket}")
+        endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT") or os.getenv("MINIO_ENDPOINT", "localhost:9000")
+        if not endpoint.startswith(("http://", "https://")):
+            endpoint = f"http://{endpoint}"
+        return (
+            os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+            os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+            endpoint,
+        )
     return values[0], values[1], values[2]
 
 
@@ -49,7 +56,7 @@ def get_buckets() -> list[str]:
     config = read_config()
     bucket_info = config.get("bucket_info", {})
     if not bucket_info:
-        raise Exception("未找到bucket配置信息")
+        return [os.getenv("MINIO_MDS_BUCKET", "mds")]
     return list(bucket_info.keys())
 
 

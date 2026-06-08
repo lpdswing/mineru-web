@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Enum
 from sqlalchemy.sql import func
 from app.models.base import Base
+from app.models.enums import DEFAULT_MINERU_BACKEND, normalize_backend_value
 from datetime import datetime
 import enum
 
@@ -12,7 +13,13 @@ class FileStatus(enum.Enum):
 
 class BackendType(enum.Enum):
     PIPELINE = 'pipeline'
+    VLM_AUTO_ENGINE = 'vlm-auto-engine'
+    VLM_HTTP_CLIENT = 'vlm-http-client'
+    HYBRID_AUTO_ENGINE = 'hybrid-auto-engine'
+    HYBRID_HTTP_CLIENT = 'hybrid-http-client'
+    # Legacy category values kept readable for existing rows.
     VLM = 'vlm'
+    HYBRID = 'hybrid'
 
 class File(Base):
     __tablename__ = 'files'
@@ -26,7 +33,7 @@ class File(Base):
     minio_path = Column(String(512), nullable=False)
     content_type = Column(String(64), nullable=True)
     version = Column(String(32), nullable=True)
-    backend = Column(Enum(BackendType), default=BackendType.PIPELINE)
+    backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     start_at = Column(DateTime(timezone=True), nullable=True)
@@ -43,7 +50,7 @@ class File(Base):
             'minio_path': self.minio_path,
             'content_type': self.content_type,
             'version': self.version,
-            'backend': self.backend.value if self.backend else BackendType.PIPELINE.value,
+            'backend': normalize_backend_value(self.backend),
             'start_at': self.start_at.isoformat() if self.start_at else None,
             'finish_at': self.finish_at.isoformat() if self.finish_at else None
         }

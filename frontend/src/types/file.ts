@@ -2,7 +2,15 @@
 export type FileStatus = 'pending' | 'parsing' | 'parsed' | 'parse_failed'
 
 // 后端类型枚举
-export type BackendType = 'pipeline' | 'vlm'
+export type BackendType =
+  | 'pipeline'
+  | 'vlm-auto-engine'
+  | 'vlm-http-client'
+  | 'hybrid-auto-engine'
+  | 'hybrid-http-client'
+  | 'vlm'
+  | 'hybrid'
+  | (string & {})
 
 // 文件项接口
 export interface FileItem {

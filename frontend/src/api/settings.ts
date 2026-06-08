@@ -1,12 +1,20 @@
 import api from './index'
 
+export type MineruBackend =
+  | 'pipeline'
+  | 'vlm-auto-engine'
+  | 'vlm-http-client'
+  | 'hybrid-auto-engine'
+  | 'hybrid-http-client'
+  | (string & {})
+
 // 设置相关类型定义
 export interface SettingsData {
   force_ocr: boolean
   ocr_lang: string
   formula_recognition: boolean
   table_recognition: boolean
-  backend: 'pipeline' | 'vlm-http-client' | 'hybrid-http-client'
+  backend: MineruBackend
   version?: string
 }
 

@@ -1,12 +1,13 @@
-from sqlalchemy import Column, Integer, String, Boolean, Enum
+from sqlalchemy import Column, Integer, String, Boolean
 from app.models.base import Base
+from app.models.enums import DEFAULT_MINERU_BACKEND, normalize_backend_value
 import enum
 
 class BackendType(enum.Enum):
     PIPELINE = 'pipeline'
-    # VLM_TRANSFORMERS = 'vlm-transformers'
-    # VLM_SGLANG_ENGINE = 'vlm-sglang-engine'
+    VLM_AUTO_ENGINE = 'vlm-auto-engine'
     VLM_HTTP_CLIENT = 'vlm-http-client'
+    HYBRID_AUTO_ENGINE = 'hybrid-auto-engine'
     HYBRID_HTTP_CLIENT = 'hybrid-http-client'
 
 class Settings(Base):
@@ -17,7 +18,7 @@ class Settings(Base):
     force_ocr = Column(Boolean, default=False)
     table_recognition = Column(Boolean, default=False)
     formula_recognition = Column(Boolean, default=False)
-    backend = Column(Enum(BackendType), default=BackendType.PIPELINE)
+    backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
 
     def to_dict(self):
         return {
@@ -26,5 +27,5 @@ class Settings(Base):
             'force_ocr': self.force_ocr,
             'table_recognition': self.table_recognition,
             'formula_recognition': self.formula_recognition,
-            'backend': self.backend.value if self.backend else BackendType.PIPELINE.value
+            'backend': normalize_backend_value(self.backend)
         }

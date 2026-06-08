@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Index
 from sqlalchemy.sql import func
 from app.models.base import Base
-from app.models.enums import FileStatus, BackendType
+from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
 from datetime import datetime
 
 class File(Base):
@@ -16,7 +16,7 @@ class File(Base):
     minio_path = Column(String(512), nullable=False)
     content_type = Column(String(64), nullable=True)
     version = Column(String(32), nullable=True)
-    backend = Column(Enum(BackendType), default=BackendType.PIPELINE)
+    backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
     error_message = Column(String(1024), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -39,7 +39,7 @@ class File(Base):
             'minio_path': self.minio_path,
             'content_type': self.content_type,
             'version': self.version,
-            'backend': self.backend.value if self.backend else BackendType.PIPELINE.value,
+            'backend': normalize_backend_value(self.backend),
             'error_message': self.error_message,
             'start_at': self.start_at.isoformat() if self.start_at else None,
             'finish_at': self.finish_at.isoformat() if self.finish_at else None

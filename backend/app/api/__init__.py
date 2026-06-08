@@ -12,4 +12,4 @@ routers = [
     settings_router,
     health_router,
     stats.router,  # 注册 stats 路由
-] 
+]
