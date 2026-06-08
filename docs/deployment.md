@@ -82,7 +82,7 @@ mineru-router --host 0.0.0.0 --port 8002 --local-gpus auto --allow-public-http-c
 
 `mineru-router` 的作用是提供一个稳定的 HTTP 入口，并管理/转发到本地 MinerU worker。多 GPU 环境下，`--local-gpus auto` 让 router 自动发现可用 GPU 并启动本地 worker，比在仓库中维护独立 vLLM/NPU compose 更少分叉。
 
-`backend/mineru-api.Dockerfile` 按 MinerU 3.2.3 官方 Docker 部署思路维护：
+`backend/mineru-api.Dockerfile` 按 MinerU 3.2.3 官方 Docker 部署思路维护，并用于发布 `linux/amd64` / `linux/arm64` 镜像：
 
 - base image 使用 `vllm/vllm-openai:v0.21.0`。
 - 构建阶段安装 `mineru[core]==3.2.3`。

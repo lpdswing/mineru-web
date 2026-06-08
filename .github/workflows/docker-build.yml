@@ -47,7 +47,6 @@ env:
   BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-backend
   FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-frontend
   MINERU_API_IMAGE: ${{ secrets.DOCKER_USERNAME }}/mineru-web-mineru-api
-  MINERU_API_PLATFORMS: linux/amd64
   # 动态设置版本：如果是release触发，使用release的标签名；否则使用手动输入的版本
   VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
 
@@ -59,7 +58,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # release 时业务镜像构建 amd64/arm64；手动触发时根据输入决定。
+      # release 时构建 amd64/arm64；手动触发时根据输入决定。
       - name: Set build platforms
         id: set-platforms
         run: |
@@ -144,7 +143,7 @@ jobs:
         with:
           context: ./backend
           file: ./backend/mineru-api.Dockerfile
-          platforms: ${{ env.MINERU_API_PLATFORMS }}
+          platforms: ${{ steps.set-platforms.outputs.platforms }}
           push: true
           tags: ${{ steps.meta_mineru_api.outputs.tags }}
           labels: ${{ steps.meta_mineru_api.outputs.labels }}
