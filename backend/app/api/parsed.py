@@ -2,12 +2,11 @@ import traceback
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from pathlib import Path
-from datetime import timedelta
 from app.database import get_db
 from app.models.file import File as FileModel
 from app.models.enums import FileStatus
 from app.services.parser import ParserService, get_buckets
-from app.utils.minio_client import minio_client
+from app.utils.minio_client import get_presigned_url, minio_client
 from app.utils.user_dep import get_user_id
 
 router = APIRouter()
@@ -121,11 +120,7 @@ def export_content(
         raise HTTPException(status_code=404, detail="导出文件不存在")
 
     # 生成下载URL
-    download_url = minio_client.presigned_get_object(
-        mds_bucket,
-        output_path,
-        expires=timedelta(hours=1)  # URL 有效期1小时
-    )
+    download_url = get_presigned_url(mds_bucket, output_path, expires=3600)
 
     # 构建下载文件名
     original_filename = Path(file.filename).stem
@@ -138,4 +133,4 @@ def export_content(
         "status": "success",
         "download_url": download_url,
         "filename": download_filename
-    } 
+    }

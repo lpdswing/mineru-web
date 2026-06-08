@@ -41,7 +41,7 @@ def get_s3_config(bucket: str) -> tuple[str, str, str]:
     bucket_info = config.get("bucket_info", {})
     values = bucket_info.get(bucket)
     if not values or len(values) < 3:
-        endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT") or os.getenv("MINIO_ENDPOINT", "localhost:9000")
+        endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
         if not endpoint.startswith(("http://", "https://")):
             endpoint = f"http://{endpoint}"
         return (
@@ -74,12 +74,11 @@ class ParserService:
     @staticmethod
     def _default_artifact_sync_factory(bucket: str) -> MineruArtifactSync:
         _, _, endpoint = get_s3_config(bucket)
-        public_endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT", endpoint)
         return MineruArtifactSync(
             minio_client,
             bucket=bucket,
             endpoint=endpoint,
-            public_endpoint=public_endpoint,
+            public_endpoint=endpoint,
         )
 
     def process_file(
