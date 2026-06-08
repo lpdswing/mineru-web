@@ -3,6 +3,7 @@ FROM vllm/vllm-openai:v0.21.0
 # FROM vllm/vllm-openai:v0.21.0-cu129
 
 ARG MINERU_VERSION=3.2.3
+ARG MINERU_MODEL_SOURCE=huggingface
 
 RUN apt-get update && \
     apt-get install -y \
@@ -19,9 +20,11 @@ RUN apt-get update && \
 RUN python3 -m pip install -U "mineru[core]==${MINERU_VERSION}" --break-system-packages && \
     python3 -m pip cache purge
 
+RUN /bin/bash -c "mineru-models-download -s ${MINERU_MODEL_SOURCE} -m all"
+
 WORKDIR /app
 
 EXPOSE 8000
 
-ENTRYPOINT ["mineru-api"]
-CMD ["--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/bin/bash", "-c", "export MINERU_MODEL_SOURCE=local && exec \"$@\"", "--"]
+CMD ["mineru-api", "--host", "0.0.0.0", "--port", "8000"]

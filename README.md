@@ -138,6 +138,31 @@ npu-smi info
 - Redis 和 MinIO 镜像会自动使用 ARM64 版本（官方镜像支持多架构）
 - 根据 NPU 显存大小调整 worker 副本数量（环境变量 `WORKER_REPLICAS`）
 
+#### 方式三：macOS Apple Silicon / M 系列本机推理
+
+MinerU 的 Docker 部署面向 Linux GPU/NPU 环境。macOS Docker 容器无法直接使用 Apple M 系列的 MPS/MLX 加速能力，因此 Mac 推荐将 MinerU API 跑在宿主机，业务服务继续用 Docker Compose 运行。
+
+1. 在宿主机启动 MinerU API：
+
+```bash
+MINERU_MODEL_SOURCE=modelscope uv run --python 3.13 --with 'mineru[all]==3.2.3' \
+  mineru-api --host 127.0.0.1 --port 18000 --allow-public-http-client
+```
+
+2. 启动 Mac 专用 Docker 环境：
+
+```bash
+docker compose -f docker-compose.mac.yml up -d --build
+```
+
+3. 验证 MinerU API 连通性：
+
+```bash
+curl http://localhost:8000/api/system/mineru-health
+```
+
+Mac 专用 Compose 中，backend/worker 会通过 `http://host.docker.internal:18000` 访问宿主机 MinerU API，从而保留 M 系列本机推理能力。
+
 
 
 ### 界面展示
