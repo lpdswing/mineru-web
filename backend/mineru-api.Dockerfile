@@ -24,6 +24,9 @@ RUN /bin/bash -c "mineru-models-download -s ${MINERU_MODEL_SOURCE} -m all"
 
 WORKDIR /app
 
+COPY mineru_api_patch /app/mineru_api_patch
+ENV PYTHONPATH="/app/mineru_api_patch:${PYTHONPATH}"
+
 EXPOSE 8000
 EXPOSE 8002
 

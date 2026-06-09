@@ -13,6 +13,7 @@ from app.utils.user_dep import get_user_id
 
 router = APIRouter()
 
+
 @router.get("/files/{file_id}/parsed_content")
 def get_parsed_content(
     file_id: int,

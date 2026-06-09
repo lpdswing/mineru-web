@@ -56,6 +56,7 @@ def test_parse_file_posts_zip_request_and_returns_bytes():
         assert b'name="lang_list"' in body
         assert b"response_format_zip" in body
         assert b"return_md" in body
+        assert b'name="return_images"\r\n\r\ntrue' in body
         return httpx.Response(
             200,
             content=make_zip_bytes(),

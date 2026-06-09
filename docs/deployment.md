@@ -122,7 +122,8 @@ MINERU_API_URL=http://your-mineru-router-or-api:8002
 Mac 的 Docker 容器不能直接使用宿主机 MPS/MLX 推理能力，因此推荐把 MinerU API 跑在宿主机：
 
 ```bash
-MINERU_MODEL_SOURCE=modelscope uv run --python 3.13 --with 'mineru[all]==3.2.3' \
+PYTHONPATH="$PWD/backend/mineru_api_patch" MINERU_MODEL_SOURCE=modelscope \
+  uv run --python 3.13 --with 'mineru[all]==3.2.3' \
   mineru-api --host 127.0.0.1 --port 18000 --allow-public-http-client
 ```
 

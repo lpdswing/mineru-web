@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 
 from app.database import get_db
@@ -36,10 +35,14 @@ class FakeMinio:
     def __init__(self):
         self.stat_calls = []
         self.objects = {}
+        self.existing_objects = {
+            ("mds", "sample.md"): b"# Main",
+            ("mds", "sample_pages.md"): b"# Pages",
+        }
 
     def stat_object(self, bucket, path):
         self.stat_calls.append((bucket, path))
-        if path not in {"sample.md", "sample_pages.md"}:
+        if (bucket, path) not in self.existing_objects and (bucket, path) not in self.objects:
             raise FileNotFoundError(path)
 
     def put_object(self, bucket, path, data, length, content_type=None):
@@ -156,3 +159,33 @@ def test_export_endpoint_repairs_missing_main_markdown_from_database(monkeypatch
         "content_type": "text/markdown; charset=utf-8",
     }
     assert response.json()["download_url"] == "http://minio/mds/sample.md?signed=1"
+
+
+def test_export_endpoint_returns_404_when_page_markdown_artifact_missing(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = MissingMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+    monkeypatch.setattr(
+        "app.api.parsed.get_presigned_url",
+        lambda bucket, path, expires=3600: f"http://minio/{bucket}/{path}?signed=1",
+    )
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/export",
+            params={"format": "markdown_page"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert fake_minio.stat_calls == [("mds", "sample_pages.md")]

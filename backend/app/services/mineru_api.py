@@ -160,6 +160,7 @@ class MineruApiClient:
             "return_middle_json": "true",
             "return_model_output": "true",
             "return_content_list": "true",
+            "return_images": "true",
             "response_format_zip": "true",
         }
         if self.server_url:
