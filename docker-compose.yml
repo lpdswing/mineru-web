@@ -68,11 +68,22 @@ services:
       MINERU_MODEL_SOURCE: local
       MINERU_API_OUTPUT_ROOT: /output
     entrypoint: mineru-router
+    # Aligned with MinerU's official router compose shape.
+    # To aggregate existing mineru-api services instead of starting local workers:
+    #   replace --local-gpus auto with --local-gpus none
+    #   add repeated --upstream-url http://mineru-api:8000 entries
+    # Parameters for vllm-engine:
+    #   add --gpu-memory-utilization 0.5
     command:
-      --host 0.0.0.0
-      --port 8002
-      --local-gpus auto
-      --allow-public-http-client
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+      - --local-gpus
+      - auto
+      # Disabled by default upstream when binding publicly; enabled here so
+      # configured *-http-client backends/server_url can work.
+      - --allow-public-http-client
     volumes:
       - mineru_api_output:/output
     ulimits:
@@ -84,6 +95,13 @@ services:
       interval: 30s
       timeout: 20s
       retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"] # Modify for multiple GPUs: ["0", "1"]
+              capabilities: [gpu]
     networks:
       - mineru-network
 
