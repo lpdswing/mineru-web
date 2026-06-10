@@ -9,7 +9,7 @@ MinerU-Popo 是面向 MinerU 结构化解析结果的后处理模型，用来重
 调研依据：
 
 - GitHub: https://github.com/opendatalab/MinerU-Popo
-- Paper: https://arxiv.org/abs/2605.24973
+- Paper: https://arxiv.org/abs/2605.12882
 - 官方 README 描述的流程是：准备 OCR/Layout 输出、统一 label schema、运行 MinerU-Popo inference、构建 document tree。
 
 ## 目标
