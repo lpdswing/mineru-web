@@ -149,6 +149,8 @@ def run_worker():
     运行文件解析工作者
     """
     logger.info("Starting file parser worker...")
+    concurrency = parse_worker_concurrency()
+    logger.info(f"WORKER_CONCURRENCY={concurrency}")
 
     try:
         # 确保消费者组存在
@@ -157,43 +159,15 @@ def run_worker():
         logger.error(f"Failed to create consumer group: {e}")
         return
 
+    in_flight = {}
     try:
-        while True:
-            try:
-                # 从 Stream 中读取新消息
-                messages = redis_client.read_stream(
-                    PARSER_STREAM,
-                    CONSUMER_GROUP,
-                    CONSUMER_NAME,
-                    count=WORK_BATCH,
-                    block=1000  # 阻塞1秒等待新消息
-                )
-                if messages:
-                    logger.info(f"Received {len(messages)} messages")
-                    for stream_id, message in messages:
-                        try:
-                            # 解析任务数据
-                            task_data = json.loads(message[b'data'].decode('utf-8'))
-                            logger.info(f"Processing task: {task_data}")
-
-                            # 使用上下文管理器处理数据库会话
-                            with get_db_context() as db:
-                                # 处理任务
-                                process_task(task_data, db)
-
-                            # 确认消息已处理
-                            redis_client.ack_message(PARSER_STREAM, CONSUMER_GROUP, stream_id)
-                            logger.info(f"Task {stream_id} processed and acknowledged")
-
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to decode task data: {e}")
-                        except Exception as e:
-                            logger.error(f"Error processing message: {e}")
-
-            except Exception as e:
-                logger.error(f"Error reading from stream: {e}")
-                time.sleep(1)  # 发生错误时等待1秒再重试
-
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            while True:
+                try:
+                    run_worker_loop_once(redis_client, executor, in_flight, concurrency)
+                except Exception as e:
+                    logger.error(f"Error reading from stream: {e}")
+                    time.sleep(1)  # 发生错误时等待1秒再重试
     except KeyboardInterrupt:
         logger.info("Worker stopped by user")
     except Exception as e:

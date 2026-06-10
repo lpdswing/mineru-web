@@ -144,3 +144,45 @@ def test_run_worker_loop_once_acks_failed_future_and_keeps_running(monkeypatch):
 
     assert fake_redis.acked == [b"1-0"]
     assert len(in_flight) == 1
+
+
+class FakeWorkerRedis:
+    def __init__(self):
+        self.created_groups = []
+
+    def create_consumer_group(self, stream, group):
+        self.created_groups.append((stream, group))
+
+    def read_stream(self, *args, **kwargs):
+        raise KeyboardInterrupt
+
+
+def test_run_worker_uses_configured_concurrency_and_creates_group(monkeypatch):
+    fake_redis = FakeWorkerRedis()
+    calls = []
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            calls.append(("executor", max_workers))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def loop_once(redis, executor, in_flight, concurrency, block_ms=1000):
+        calls.append(("loop", redis, executor, concurrency, block_ms))
+        raise KeyboardInterrupt
+
+    monkeypatch.setenv("WORKER_CONCURRENCY", "4")
+    monkeypatch.setattr(worker, "redis_client", fake_redis)
+    monkeypatch.setattr(worker, "ThreadPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(worker, "run_worker_loop_once", loop_once)
+
+    worker.run_worker()
+
+    assert fake_redis.created_groups == [(worker.PARSER_STREAM, worker.CONSUMER_GROUP)]
+    assert calls[0] == ("executor", 4)
+    assert calls[1][0] == "loop"
+    assert calls[1][3] == 4
