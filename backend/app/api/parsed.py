@@ -1,3 +1,4 @@
+import json
 import traceback
 from io import BytesIO
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
@@ -14,9 +15,29 @@ from app.utils.user_dep import get_user_id
 router = APIRouter()
 
 
+def _artifact_stem(file: FileModel) -> str:
+    return Path(file.minio_path).stem
+
+
+def _markdown_path_for_variant(file: FileModel, variant: str) -> str:
+    stem = _artifact_stem(file)
+    if variant == "markdown":
+        return f"{stem}.md"
+    if variant == "markdown_page":
+        return f"{stem}_pages.md"
+    if variant in {"popo", "markdown_popo"}:
+        return f"{stem}_popo.md"
+    raise HTTPException(status_code=400, detail="不支持的 Markdown 变体")
+
+
+def _popo_status_path(file: FileModel) -> str:
+    return f"{_artifact_stem(file)}_popo_status.json"
+
+
 @router.get("/files/{file_id}/parsed_content")
 def get_parsed_content(
     file_id: int,
+    variant: str = Query("markdown", description="markdown、markdown_page 或 popo"),
     user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
@@ -25,11 +46,21 @@ def get_parsed_content(
     if not file:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    # 使用解析服务获取内容
-    parser = ParserService(db)
-    content = parser.get_parsed_content(file_id, user_id)
+    if variant == "markdown":
+        # 使用解析服务获取内容
+        parser = ParserService(db)
+        content = parser.get_parsed_content(file_id, user_id)
+        return content
 
-    return content
+    output_path = _markdown_path_for_variant(file, variant)
+    buckets = get_buckets()
+    mds_bucket = buckets[0]
+
+    try:
+        response = minio_client.get_object(mds_bucket, output_path)
+        return response.read().decode("utf-8")
+    except Exception:
+        raise HTTPException(status_code=404, detail="导出文件不存在")
 
 @router.post("/files/{file_id}/parse")
 def parse_file(
@@ -87,7 +118,7 @@ def get_parse_status(
 @router.get("/files/{file_id}/export")
 def export_content(
     file_id: int,
-    format: str = Query('markdown', description="导出格式：markdown 或 markdown_page"),
+    format: str = Query('markdown', description="导出格式：markdown、markdown_page 或 markdown_popo"),
     user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
@@ -95,7 +126,7 @@ def export_content(
 
     Args:
         file_id: 文件ID
-        format: 导出格式，支持 markdown 和 markdown_page
+        format: 导出格式，支持 markdown、markdown_page 和 markdown_popo
         user_id: 用户ID
 
     Returns:
@@ -110,11 +141,7 @@ def export_content(
     buckets = get_buckets()
     mds_bucket = buckets[0]  # markdown 文件存储的 bucket
 
-    # 构建文件名
-    file_name = Path(file.minio_path).stem
-    if format == 'markdown_page':
-        file_name = f"{file_name}_pages"
-    output_path = f"{file_name}.md"
+    output_path = _markdown_path_for_variant(file, format)
 
     # 检查文件是否存在于 MinIO
     try:
@@ -146,6 +173,8 @@ def export_content(
     original_filename = Path(file.filename).stem
     if format == 'markdown_page':
         download_filename = f"{original_filename}_pages.md"
+    elif format == 'markdown_popo':
+        download_filename = f"{original_filename}_popo.md"
     else:
         download_filename = f"{original_filename}.md"
 
@@ -154,3 +183,23 @@ def export_content(
         "download_url": download_url,
         "filename": download_filename
     }
+
+
+@router.get("/files/{file_id}/popo/status")
+def get_popo_status(
+    file_id: int,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    file = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    buckets = get_buckets()
+    mds_bucket = buckets[0]
+
+    try:
+        response = minio_client.get_object(mds_bucket, _popo_status_path(file))
+        return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return {"status": "not_available", "message": ""}

@@ -7,6 +7,14 @@ from app.models.parsed_content import ParsedContent
 from main import app
 
 
+class FakeObject:
+    def __init__(self, content):
+        self.content = content
+
+    def read(self):
+        return self.content
+
+
 class FakeQuery:
     def __init__(self, item):
         self.item = item
@@ -38,6 +46,8 @@ class FakeMinio:
         self.existing_objects = {
             ("mds", "sample.md"): b"# Main",
             ("mds", "sample_pages.md"): b"# Pages",
+            ("mds", "sample_popo.md"): b"# Popo",
+            ("mds", "sample_popo_status.json"): b'{"status":"success","message":""}',
         }
 
     def stat_object(self, bucket, path):
@@ -50,6 +60,13 @@ class FakeMinio:
             "content": data.read(),
             "content_type": content_type,
         }
+
+    def get_object(self, bucket, path):
+        if (bucket, path) in self.objects:
+            return FakeObject(self.objects[(bucket, path)]["content"])
+        if (bucket, path) in self.existing_objects:
+            return FakeObject(self.existing_objects[(bucket, path)])
+        raise FileNotFoundError(path)
 
 
 class MissingMinio(FakeMinio):
@@ -189,3 +206,86 @@ def test_export_endpoint_returns_404_when_page_markdown_artifact_missing(monkeyp
 
     assert response.status_code == 404
     assert fake_minio.stat_calls == [("mds", "sample_pages.md")]
+
+
+def test_parsed_content_returns_popo_markdown(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/parsed_content",
+            params={"variant": "popo"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == "# Popo"
+
+
+def test_export_endpoint_returns_popo_markdown_download_url(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+    monkeypatch.setattr(
+        "app.api.parsed.get_presigned_url",
+        lambda bucket, path, expires=3600: f"http://minio/{bucket}/{path}?signed=1",
+    )
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/export",
+            params={"format": "markdown_popo"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_minio.stat_calls == [("mds", "sample_popo.md")]
+    assert response.json()["download_url"] == "http://minio/mds/sample_popo.md?signed=1"
+    assert response.json()["filename"] == "sample_popo.md"
+
+
+def test_popo_status_returns_status_json(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/status",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success", "message": ""}
