@@ -19,6 +19,7 @@ cp .env.example .env
 ```bash
 MINIO_ENDPOINT=SERVER_IP:9000
 WORKER_REPLICAS=1
+WORKER_CONCURRENCY=1
 ```
 
 `MINIO_ENDPOINT` 必须填写浏览器和容器都能访问的宿主机 IP 或域名。不要在服务器部署中填写 `minio:9000`，因为浏览器无法解析容器内部 DNS。也不要在 Docker 容器里使用 `127.0.0.1:9000` 指向宿主机，除非你的容器运行时明确支持这种映射。
@@ -35,9 +36,28 @@ MINIO_ENDPOINT=https://minio.example.com
 
 ```bash
 SERVER_URL=http://openai-compatible-server:30000
+MINERU_API_USE_ASYNC_TASKS=0
 ```
 
 只有选择 `vlm-http-client` 或 `hybrid-http-client` 并接入外部 OpenAI 兼容服务时才需要 `SERVER_URL`。
+
+### Worker 并发
+
+worker 侧总解析并发为：
+
+```text
+WORKER_REPLICAS * WORKER_CONCURRENCY
+```
+
+默认 `WORKER_CONCURRENCY=1`。多 GPU 部署可以按 MinerU API 可承载的解析槽位调大，例如：
+
+```text
+WORKER_REPLICAS=2
+WORKER_CONCURRENCY=2
+MINERU_API_USE_ASYNC_TASKS=1
+```
+
+`MINERU_API_USE_ASYNC_TASKS=1` 只切换 MinerU API 调用方式为 `/tasks` 提交、轮询、取结果，不会单独增加 worker 并发。
 
 ## Linux / 服务器部署
 

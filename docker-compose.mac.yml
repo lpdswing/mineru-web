@@ -23,6 +23,8 @@ services:
       - MINIO_MDS_BUCKET=mds
       - DATABASE_URL=sqlite:////data/mineru.db
       - MINERU_API_URL=http://host.docker.internal:18000
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+      - MINERU_API_USE_ASYNC_TASKS=${MINERU_API_USE_ASYNC_TASKS:-0}
     volumes:
       - backend_data:/data
     depends_on:
