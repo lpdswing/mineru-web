@@ -19,13 +19,24 @@ def _artifact_stem(file: FileModel) -> str:
     return Path(file.minio_path).stem
 
 
-def _markdown_path_for_variant(file: FileModel, variant: str) -> str:
+def _markdown_path_for_preview_variant(file: FileModel, variant: str) -> str:
     stem = _artifact_stem(file)
     if variant == "markdown":
         return f"{stem}.md"
     if variant == "markdown_page":
         return f"{stem}_pages.md"
-    if variant in {"popo", "markdown_popo"}:
+    if variant == "popo":
+        return f"{stem}_popo.md"
+    raise HTTPException(status_code=400, detail="不支持的 Markdown 变体")
+
+
+def _markdown_path_for_export_format(file: FileModel, format: str) -> str:
+    stem = _artifact_stem(file)
+    if format == "markdown":
+        return f"{stem}.md"
+    if format == "markdown_page":
+        return f"{stem}_pages.md"
+    if format == "markdown_popo":
         return f"{stem}_popo.md"
     raise HTTPException(status_code=400, detail="不支持的 Markdown 变体")
 
@@ -52,7 +63,7 @@ def get_parsed_content(
         content = parser.get_parsed_content(file_id, user_id)
         return content
 
-    output_path = _markdown_path_for_variant(file, variant)
+    output_path = _markdown_path_for_preview_variant(file, variant)
     buckets = get_buckets()
     mds_bucket = buckets[0]
 
@@ -141,7 +152,7 @@ def export_content(
     buckets = get_buckets()
     mds_bucket = buckets[0]  # markdown 文件存储的 bucket
 
-    output_path = _markdown_path_for_variant(file, format)
+    output_path = _markdown_path_for_export_format(file, format)
 
     # 检查文件是否存在于 MinIO
     try:

@@ -234,6 +234,28 @@ def test_parsed_content_returns_popo_markdown(monkeypatch):
     assert response.json() == "# Popo"
 
 
+def test_parsed_content_rejects_markdown_popo_variant(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/parsed_content",
+            params={"variant": "markdown_popo"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+
+
 def test_export_endpoint_returns_popo_markdown_download_url(monkeypatch):
     fake_file = SimpleNamespace(
         id=3,
@@ -264,6 +286,28 @@ def test_export_endpoint_returns_popo_markdown_download_url(monkeypatch):
     assert fake_minio.stat_calls == [("mds", "sample_popo.md")]
     assert response.json()["download_url"] == "http://minio/mds/sample_popo.md?signed=1"
     assert response.json()["filename"] == "sample_popo.md"
+
+
+def test_export_endpoint_rejects_popo_format(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/export",
+            params={"format": "popo"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
 
 
 def test_popo_status_returns_status_json(monkeypatch):
