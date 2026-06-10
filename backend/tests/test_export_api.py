@@ -96,6 +96,18 @@ class FailingStatMinio(FakeMinio):
         raise RuntimeError("minio down")
 
 
+class FakeS3Error(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+class MissingGetS3Minio(FakeMinio):
+    def get_object(self, bucket, path):
+        self.get_calls.append((bucket, path))
+        raise FakeS3Error("NoSuchKey")
+
+
 def test_export_endpoint_returns_main_markdown_download_url(monkeypatch):
     fake_file = SimpleNamespace(
         id=3,
@@ -284,6 +296,33 @@ def test_parsed_content_returns_popo_markdown(monkeypatch):
     assert fake_minio.get_responses[0].released is True
 
 
+def test_parsed_content_returns_404_when_minio_get_reports_missing_s3_error(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = MissingGetS3Minio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.S3Error", FakeS3Error)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/parsed_content",
+            params={"variant": "popo"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert fake_minio.get_calls == [("mds", "sample_popo.md")]
+
+
 def test_parsed_content_rejects_markdown_popo_variant(monkeypatch):
     fake_file = SimpleNamespace(
         id=3,
@@ -411,6 +450,33 @@ def test_popo_status_returns_not_available_when_artifact_missing(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"status": "not_available", "message": ""}
+
+
+def test_popo_status_returns_not_available_when_minio_get_reports_missing_s3_error(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = MissingGetS3Minio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.S3Error", FakeS3Error)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/status",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "not_available", "message": ""}
+    assert fake_minio.get_calls == [("mds", "sample_popo_status.json")]
 
 
 def test_popo_status_returns_500_when_status_json_is_corrupt(monkeypatch):

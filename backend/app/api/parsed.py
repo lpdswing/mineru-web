@@ -97,9 +97,9 @@ def get_parsed_content(
 
     try:
         return _read_minio_object(mds_bucket, output_path).decode("utf-8")
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="导出文件不存在")
     except Exception as e:
+        if _is_missing_object_error(e):
+            raise HTTPException(status_code=404, detail="导出文件不存在")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/files/{file_id}/parse")
@@ -242,9 +242,9 @@ def get_popo_status(
 
     try:
         content = _read_minio_object(mds_bucket, _popo_status_path(file)).decode("utf-8")
-    except FileNotFoundError:
-        return {"status": "not_available", "message": ""}
     except Exception as e:
+        if _is_missing_object_error(e):
+            return {"status": "not_available", "message": ""}
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
