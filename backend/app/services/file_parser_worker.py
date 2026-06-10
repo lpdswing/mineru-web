@@ -10,6 +10,7 @@ import time
 import gc
 import uuid
 import socket
+from concurrent.futures import Future, ThreadPoolExecutor
 from loguru import logger
 from sqlalchemy.orm import Session
 from app.database import get_db_context
@@ -102,6 +103,46 @@ def process_stream_message(stream_id, message: dict) -> None:
     logger.info(f"Processing task: {task_data}")
     with get_db_context() as db:
         process_task(task_data, db)
+
+
+def run_worker_loop_once(
+    redis,
+    executor,
+    in_flight: dict[Future, bytes],
+    concurrency: int,
+    block_ms: int = 1000,
+) -> None:
+    for future in list(in_flight):
+        if not future.done():
+            continue
+        stream_id = in_flight.pop(future)
+        try:
+            future.result()
+        except Exception as exc:
+            logger.error(f"Error processing message {stream_id}: {exc}")
+        redis.ack_message(PARSER_STREAM, CONSUMER_GROUP, stream_id)
+        logger.info(f"Task {stream_id} processed and acknowledged")
+
+    free_slots = concurrency - len(in_flight)
+    if free_slots <= 0:
+        return
+
+    messages = redis.read_stream(
+        PARSER_STREAM,
+        CONSUMER_GROUP,
+        CONSUMER_NAME,
+        count=free_slots,
+        block=block_ms,
+    )
+    if not messages:
+        return
+
+    logger.info(
+        f"in_flight={len(in_flight)} free_slots={free_slots} received={len(messages)}"
+    )
+    for stream_id, message in messages:
+        future = executor.submit(process_stream_message, stream_id, message)
+        in_flight[future] = stream_id
 
 def run_worker():
     """
