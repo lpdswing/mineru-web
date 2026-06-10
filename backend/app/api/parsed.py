@@ -45,6 +45,19 @@ def _popo_status_path(file: FileModel) -> str:
     return f"{_artifact_stem(file)}_popo_status.json"
 
 
+def _read_minio_object(bucket: str, path: str) -> bytes:
+    response = minio_client.get_object(bucket, path)
+    try:
+        return response.read()
+    finally:
+        close = getattr(response, "close", None)
+        if close:
+            close()
+        release_conn = getattr(response, "release_conn", None)
+        if release_conn:
+            release_conn()
+
+
 @router.get("/files/{file_id}/parsed_content")
 def get_parsed_content(
     file_id: int,
@@ -68,10 +81,11 @@ def get_parsed_content(
     mds_bucket = buckets[0]
 
     try:
-        response = minio_client.get_object(mds_bucket, output_path)
-        return response.read().decode("utf-8")
-    except Exception:
+        return _read_minio_object(mds_bucket, output_path).decode("utf-8")
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="导出文件不存在")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/files/{file_id}/parse")
 def parse_file(
@@ -210,7 +224,13 @@ def get_popo_status(
     mds_bucket = buckets[0]
 
     try:
-        response = minio_client.get_object(mds_bucket, _popo_status_path(file))
-        return json.loads(response.read().decode("utf-8"))
-    except Exception:
+        content = _read_minio_object(mds_bucket, _popo_status_path(file)).decode("utf-8")
+    except FileNotFoundError:
         return {"status": "not_available", "message": ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=str(e))

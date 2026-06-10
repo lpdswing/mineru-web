@@ -10,9 +10,17 @@ from main import app
 class FakeObject:
     def __init__(self, content):
         self.content = content
+        self.closed = False
+        self.released = False
 
     def read(self):
         return self.content
+
+    def close(self):
+        self.closed = True
+
+    def release_conn(self):
+        self.released = True
 
 
 class FakeQuery:
@@ -42,6 +50,8 @@ class FakeDb:
 class FakeMinio:
     def __init__(self):
         self.stat_calls = []
+        self.get_calls = []
+        self.get_responses = []
         self.objects = {}
         self.existing_objects = {
             ("mds", "sample.md"): b"# Main",
@@ -62,10 +72,15 @@ class FakeMinio:
         }
 
     def get_object(self, bucket, path):
+        self.get_calls.append((bucket, path))
         if (bucket, path) in self.objects:
-            return FakeObject(self.objects[(bucket, path)]["content"])
+            response = FakeObject(self.objects[(bucket, path)]["content"])
+            self.get_responses.append(response)
+            return response
         if (bucket, path) in self.existing_objects:
-            return FakeObject(self.existing_objects[(bucket, path)])
+            response = FakeObject(self.existing_objects[(bucket, path)])
+            self.get_responses.append(response)
+            return response
         raise FileNotFoundError(path)
 
 
@@ -232,6 +247,8 @@ def test_parsed_content_returns_popo_markdown(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == "# Popo"
+    assert fake_minio.get_responses[0].closed is True
+    assert fake_minio.get_responses[0].released is True
 
 
 def test_parsed_content_rejects_markdown_popo_variant(monkeypatch):
@@ -333,3 +350,59 @@ def test_popo_status_returns_status_json(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"status": "success", "message": ""}
+    assert fake_minio.get_responses[0].closed is True
+    assert fake_minio.get_responses[0].released is True
+
+
+def test_popo_status_returns_not_available_when_artifact_missing(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+    del fake_minio.existing_objects[("mds", "sample_popo_status.json")]
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/status",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "not_available", "message": ""}
+
+
+def test_popo_status_returns_500_when_status_json_is_corrupt(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+    fake_minio.existing_objects[("mds", "sample_popo_status.json")] = b"{"
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/status",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert response.json() != {"status": "not_available", "message": ""}
+    assert fake_minio.get_responses[0].closed is True
+    assert fake_minio.get_responses[0].released is True
