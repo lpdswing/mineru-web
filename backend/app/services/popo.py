@@ -64,7 +64,7 @@ class PopoPostprocessor:
     ):
         self.config = config or PopoConfig.from_env()
         self.minio = minio
-        self.http_client = http_client or httpx.Client(timeout=self.config.timeout_seconds)
+        self._http_client = http_client
 
     def postprocess(self, bucket: str, prefix: str, uploaded_paths: list[str]) -> None:
         if not self.config.enabled:
@@ -74,7 +74,7 @@ class PopoPostprocessor:
         artifacts = discover_popo_artifacts(uploaded_paths)
         missing = [name for name in _required_artifacts() if name not in artifacts]
         if missing:
-            self.write_status(
+            self._write_status_best_effort(
                 bucket,
                 outputs["status"],
                 "skipped",
@@ -90,12 +90,12 @@ class PopoPostprocessor:
         }
 
         try:
-            response = self.http_client.post(f"{self.config.api_url}/v1/postprocess", json=payload)
+            response = self._client().post(f"{self.config.api_url}/v1/postprocess", json=payload)
             response.raise_for_status()
         except Exception as exc:
             message = str(exc)[:1024]
             logger.warning("Popo postprocess failed: %s", message)
-            self.write_status(bucket, outputs["status"], "failed", message)
+            self._write_status_best_effort(bucket, outputs["status"], "failed", message)
 
     def write_status(self, bucket: str, path: str, status: str, message: str = "") -> None:
         if not self.minio:
@@ -112,6 +112,17 @@ class PopoPostprocessor:
             len(content),
             content_type="application/json",
         )
+
+    def _write_status_best_effort(self, bucket: str, path: str, status: str, message: str = "") -> None:
+        try:
+            self.write_status(bucket, path, status, message)
+        except Exception as exc:
+            logger.warning("Popo status write failed: %s", str(exc)[:1024])
+
+    def _client(self) -> httpx.Client:
+        if self._http_client is None:
+            self._http_client = httpx.Client(timeout=self.config.timeout_seconds)
+        return self._http_client
 
 
 def _required_artifacts() -> list[str]:
