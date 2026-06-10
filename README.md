@@ -26,6 +26,7 @@ cp .env.example .env
 ```bash
 MINIO_ENDPOINT=SERVER_IP:9000
 WORKER_REPLICAS=1
+WORKER_CONCURRENCY=1
 ```
 
 Linux 服务器、macOS Apple Silicon、模型下载、MinerU Router、多 GPU、MinIO 地址和验证命令见：[部署文档](docs/deployment.md)。
