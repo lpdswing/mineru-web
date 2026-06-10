@@ -56,7 +56,32 @@ class FakeArtifactSync:
     def sync_zip(self, content, output_name):
         assert content == b"zip"
         assert output_name == "sample"
-        return SimpleNamespace(markdown="# parsed")
+        return SimpleNamespace(markdown="# parsed", markdown_path="sample.md", uploaded_paths=[])
+
+
+class FakeArtifactSyncWithPaths:
+    def sync_zip(self, content, output_name):
+        assert output_name == "sample"
+        return SimpleNamespace(
+            markdown="# parsed",
+            markdown_path="sample.md",
+            uploaded_paths=[
+                "sample/auto/sample_middle.json",
+                "sample/auto/sample_content_list.json",
+                "sample/auto/sample_model.json",
+            ],
+        )
+
+
+class FakePopoPostprocessor:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.calls = []
+
+    def postprocess(self, bucket, prefix, uploaded_paths):
+        self.calls.append((bucket, prefix, uploaded_paths))
+        if self.fail:
+            raise RuntimeError("popo failed")
 
 
 def test_parse_file_uses_mineru_api_and_artifact_sync(monkeypatch):
@@ -87,3 +112,65 @@ def test_parse_file_uses_mineru_api_and_artifact_sync(monkeypatch):
     assert file.status == FileStatus.PARSED
     assert file.error_message is None
     assert db.added[0].content == "# parsed"
+
+
+def test_parse_file_triggers_popo_after_artifact_sync(monkeypatch):
+    fake_client = FakeApiClient()
+    fake_popo = FakePopoPostprocessor()
+    db = FakeDb()
+    service = ParserService(
+        db,
+        mineru_api_client=fake_client,
+        artifact_sync_factory=lambda bucket: FakeArtifactSyncWithPaths(),
+        popo_postprocessor=fake_popo,
+    )
+    file = SimpleNamespace(
+        id=1,
+        minio_path="uploads/sample.pdf",
+        status=FileStatus.PENDING,
+        start_at=None,
+        finish_at=None,
+        error_message=None,
+    )
+
+    monkeypatch.setattr("app.services.parser.minio_client", FakeMinio())
+    monkeypatch.setattr("app.services.parser.get_buckets", lambda: ["mds"])
+
+    assert service.parse_file(file, user_id="u1") == {"status": "success"}
+    assert fake_popo.calls == [
+        (
+            "mds",
+            "sample",
+            [
+                "sample/auto/sample_middle.json",
+                "sample/auto/sample_content_list.json",
+                "sample/auto/sample_model.json",
+            ],
+        )
+    ]
+
+
+def test_parse_file_keeps_success_when_popo_fails(monkeypatch):
+    fake_popo = FakePopoPostprocessor(fail=True)
+    service = ParserService(
+        FakeDb(),
+        mineru_api_client=FakeApiClient(),
+        artifact_sync_factory=lambda bucket: FakeArtifactSyncWithPaths(),
+        popo_postprocessor=fake_popo,
+    )
+    file = SimpleNamespace(
+        id=1,
+        minio_path="uploads/sample.pdf",
+        status=FileStatus.PENDING,
+        start_at=None,
+        finish_at=None,
+        error_message=None,
+    )
+
+    monkeypatch.setattr("app.services.parser.minio_client", FakeMinio())
+    monkeypatch.setattr("app.services.parser.get_buckets", lambda: ["mds"])
+
+    result = service.parse_file(file, user_id="u1")
+
+    assert result == {"status": "success"}
+    assert file.status == FileStatus.PARSED

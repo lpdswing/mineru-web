@@ -13,6 +13,7 @@ from app.models.parsed_content import ParsedContent
 from app.models.settings import Settings
 from app.services.artifact_sync import MineruArtifactSync
 from app.services.mineru_api import MineruApiClient
+from app.services.popo import PopoPostprocessor
 from app.utils.minio_client import MINIO_BUCKET, minio_client
 from app.utils.redis_client import redis_client
 
@@ -66,10 +67,12 @@ class ParserService:
         db: Session,
         mineru_api_client: MineruApiClient | None = None,
         artifact_sync_factory=None,
+        popo_postprocessor: PopoPostprocessor | None = None,
     ):
         self.db = db
         self.mineru_api_client = mineru_api_client or MineruApiClient()
         self.artifact_sync_factory = artifact_sync_factory or self._default_artifact_sync_factory
+        self.popo_postprocessor = popo_postprocessor or PopoPostprocessor(minio=minio_client)
 
     @staticmethod
     def _default_artifact_sync_factory(bucket: str) -> MineruArtifactSync:
@@ -107,6 +110,10 @@ class ParserService:
         )
         artifact_sync = self.artifact_sync_factory(mds_bucket)
         synced = artifact_sync.sync_zip(result.content, output_name=file_name)
+        try:
+            self.popo_postprocessor.postprocess(mds_bucket, file_name, synced.uploaded_paths)
+        except Exception as exc:
+            logger.warning(f"Popo postprocess skipped for {file_name}: {exc}")
         return [synced.markdown]
 
     def parse_file(self, file: FileModel, user_id: str, parse_method: str = "auto", predictor=None) -> dict[str, Any]:
