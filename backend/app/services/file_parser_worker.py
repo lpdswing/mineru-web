@@ -92,6 +92,17 @@ def process_task(task_data: dict, db: Session):
             file.status = FileStatus.PARSE_FAILED
             db.commit()
 
+
+def decode_task_message(message: dict) -> dict:
+    return json.loads(message[b"data"].decode("utf-8"))
+
+
+def process_stream_message(stream_id, message: dict) -> None:
+    task_data = decode_task_message(message)
+    logger.info(f"Processing task: {task_data}")
+    with get_db_context() as db:
+        process_task(task_data, db)
+
 def run_worker():
     """
     运行文件解析工作者
