@@ -12,7 +12,14 @@ from app.services.parser import ParserService, get_buckets
 from app.utils.minio_client import get_presigned_url, minio_client
 from app.utils.user_dep import get_user_id
 
+try:
+    from minio.error import S3Error
+except ImportError:
+    S3Error = None
+
 router = APIRouter()
+
+_MINIO_MISSING_ERROR_CODES = {"NoSuchKey", "NoSuchObject", "NoSuchBucket", "NotFound"}
 
 
 def _artifact_stem(file: FileModel) -> str:
@@ -56,6 +63,14 @@ def _read_minio_object(bucket: str, path: str) -> bytes:
         release_conn = getattr(response, "release_conn", None)
         if release_conn:
             release_conn()
+
+
+def _is_missing_object_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    if S3Error and isinstance(exc, S3Error):
+        return exc.code in _MINIO_MISSING_ERROR_CODES
+    return False
 
 
 @router.get("/files/{file_id}/parsed_content")
@@ -171,7 +186,9 @@ def export_content(
     # 检查文件是否存在于 MinIO
     try:
         minio_client.stat_object(mds_bucket, output_path)
-    except Exception:
+    except Exception as e:
+        if not _is_missing_object_error(e):
+            raise HTTPException(status_code=500, detail=str(e))
         if format != 'markdown':
             raise HTTPException(status_code=404, detail="导出文件不存在")
 

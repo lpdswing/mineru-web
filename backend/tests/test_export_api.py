@@ -90,6 +90,12 @@ class MissingMinio(FakeMinio):
         raise FileNotFoundError(path)
 
 
+class FailingStatMinio(FakeMinio):
+    def stat_object(self, bucket, path):
+        self.stat_calls.append((bucket, path))
+        raise RuntimeError("minio down")
+
+
 def test_export_endpoint_returns_main_markdown_download_url(monkeypatch):
     fake_file = SimpleNamespace(
         id=3,
@@ -220,6 +226,33 @@ def test_export_endpoint_returns_404_when_page_markdown_artifact_missing(monkeyp
         app.dependency_overrides.clear()
 
     assert response.status_code == 404
+    assert fake_minio.stat_calls == [("mds", "sample_pages.md")]
+
+
+def test_export_endpoint_returns_500_when_minio_stat_fails(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FailingStatMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/export",
+            params={"format": "markdown_page"},
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "minio down"
     assert fake_minio.stat_calls == [("mds", "sample_pages.md")]
 
 
