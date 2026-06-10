@@ -23,12 +23,18 @@ from app.services.parser import ParserService
 def clean_memory():
     gc.collect()
 
-# 批处理文件数
-WORK_BATCH = os.getenv("WORK_BATCH", 1)
-
 # Redis Stream 配置
 PARSER_STREAM = "file_parser_stream"
 CONSUMER_GROUP = "parser_workers"
+
+
+def parse_worker_concurrency(raw_value=None) -> int:
+    value = raw_value if raw_value is not None else os.getenv("WORKER_CONCURRENCY", "1")
+    try:
+        concurrency = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return concurrency if concurrency >= 1 else 1
 
 # 生成唯一的 Consumer Name
 # 优先使用环境变量 WORKER_ID，其次使用主机名，最后使用 UUID
