@@ -1,49 +1,52 @@
-# Worker Concurrency Design
+# Worker 并发调度设计
 
-## Context
+## 背景
 
-MinerU API can use multiple GPUs through `mineru-router`, but the current `mineru-web` worker processes Redis Stream messages serially inside each worker process. `WORKER_REPLICAS` can increase total throughput by adding containers, but there is no per-worker concurrency control. `WORK_BATCH` only controls how many messages are read in one call; the messages are still processed one by one.
+MinerU API 可以通过 `mineru-router` 使用多 GPU 并行推理，但当前 `mineru-web` 的 worker 在每个进程内是串行处理 Redis Stream 消息的。`WORKER_REPLICAS` 可以通过增加 worker 容器数量提高吞吐，但单个 worker 容器内部没有并发控制。
 
-The goal is to use MinerU API capacity more effectively with a simple static concurrency limit. This design does not add dynamic MinerU capacity detection, automatic retry, pending-message reclaim, or a dead-letter queue.
+当前的 `WORK_BATCH` 只表示一次从 Redis 读取多少条消息；读出来以后还是按 `for` 循环一条一条同步解析。因此它不是实际并发控制项。
 
-## Goals
+这次目标是用一个简单、静态、可配置的并发上限，把 worker 的提交能力调到 MinerU API 可承载范围内。这个设计不做动态容量探测，也不引入自动重试、死信队列或 Redis pending 消息回收。
 
-- Add per-worker static concurrency with `WORKER_CONCURRENCY`.
-- Keep the deployment-level concurrency model simple:
+## 目标
+
+- 新增单 worker 内部并发配置：`WORKER_CONCURRENCY`。
+- 总并发模型保持简单：
 
   ```text
-  total parse concurrency = WORKER_REPLICAS * WORKER_CONCURRENCY
+  总解析并发 = WORKER_REPLICAS * WORKER_CONCURRENCY
   ```
 
-- Default to current behavior when not configured: one worker container processes one task at a time.
-- Ensure a worker never claims more Redis messages than it has free execution slots.
-- Keep task failures isolated so one failed parse does not block other in-flight parses.
-- Keep the existing failure semantics: failed parses mark the file as `parse_failed` and the Redis message is acknowledged after processing.
+- 默认值保持保守：不配置时，一个 worker 容器一次只处理一个任务。
+- worker 不提前抢占超过自己空闲执行槽数量的 Redis 消息。
+- 单个任务失败不能阻塞其他正在执行的任务。
+- 失败语义保持简单：解析失败后文件状态标记为 `parse_failed`，这条 Redis 消息处理结束后仍然 ack。
 
-## Non-Goals
+## 非目标
 
-- No automatic retry or dead-letter queue.
-- No Redis pending entry reclaim.
-- No dynamic capacity probing from MinerU health/status endpoints.
-- No async rewrite of Redis, SQLAlchemy, MinIO, or HTTP client code.
-- No Prometheus metrics in this change.
+- 不做自动重试。
+- 不做死信队列。
+- 不做 Redis pending entry reclaim。
+- 不从 MinerU health/status 接口动态推断容量。
+- 不把 Redis、SQLAlchemy、MinIO、HTTP client 改成 async。
+- 不在本次加入 Prometheus 指标。
 
-## Configuration
+## 配置
 
-Add:
+新增：
 
 ```text
 WORKER_CONCURRENCY=1
 ```
 
-Rules:
+规则：
 
-- Missing, invalid, or less-than-one values fall back to `1`.
-- `WORKER_REPLICAS` continues to control worker container count.
-- `WORKER_CONCURRENCY` controls max in-flight tasks inside each worker process.
-- `WORK_BATCH` is not part of the new scheduling model and should not be documented as a tuning knob for parse concurrency.
+- 未设置、非法值、小于 1 的值，都回退到 `1`。
+- `WORKER_REPLICAS` 继续表示 worker 容器数量。
+- `WORKER_CONCURRENCY` 表示单个 worker 进程内最多同时处理多少个解析任务。
+- `WORK_BATCH` 不进入新的调度模型，也不作为推荐调参入口。
 
-Recommended multi-GPU deployment:
+多 GPU 部署示例：
 
 ```text
 WORKER_REPLICAS=2
@@ -51,78 +54,80 @@ WORKER_CONCURRENCY=2
 MINERU_API_USE_ASYNC_TASKS=1
 ```
 
-This gives four worker-side parse slots. `MINERU_API_USE_ASYNC_TASKS=1` switches each slot from synchronous `/file_parse` calls to `/tasks` submit/poll/result calls. It does not itself increase worker concurrency.
+这表示 worker 侧一共有 4 个解析执行槽。
 
-## Worker Scheduling Model
+`MINERU_API_USE_ASYNC_TASKS=1` 只控制调用 MinerU API 的协议模式：从同步 `/file_parse` 切换为 `/tasks` 提交、轮询、取结果。它本身不增加 worker 并发。
 
-Each worker process owns a `ThreadPoolExecutor`:
+## Worker 调度模型
+
+每个 worker 进程内部创建一个线程池：
 
 ```python
 ThreadPoolExecutor(max_workers=WORKER_CONCURRENCY)
 ```
 
-The main loop tracks in-flight futures and only reads new Redis Stream messages when there are free slots:
+主循环维护当前正在执行的任务集合 `in_flight`。每轮先回收已完成任务，再根据空闲槽位读取新消息：
 
 ```text
 free_slots = WORKER_CONCURRENCY - len(in_flight)
 if free_slots > 0:
-    read up to free_slots messages
-    submit each message to the thread pool
+    从 Redis 最多读取 free_slots 条消息
+    每条消息提交到线程池
 ```
 
-The worker acknowledges a Redis message only after its future completes. This means a worker does not claim work it cannot start, and other worker replicas can keep consuming available messages.
+这样 worker 只会领取自己马上能开始处理的任务，不会把大量消息提前占住。多个 worker 副本之间也能继续通过 Redis consumer group 分摊任务。
 
-## Task Lifecycle
+## 任务生命周期
 
-Each Redis message follows this lifecycle:
+每条 Redis 消息的生命周期：
 
 ```text
-XREADGROUP -> submit to thread -> process_task -> future complete -> XACK
+XREADGROUP -> 提交到线程池 -> process_task -> future 完成 -> XACK
 ```
 
-Each task thread creates its own database session:
+每个任务线程自己创建数据库 session：
 
 ```python
 with get_db_context() as db:
     process_task(task_data, db)
 ```
 
-`ParserService`, `MineruApiClient`, and MinIO operations stay inside the task thread. SQLAlchemy sessions are not shared across threads.
+`ParserService`、`MineruApiClient`、MinIO 操作都留在任务线程内部执行。SQLAlchemy session 不跨线程共享。
 
-On success:
+成功时：
 
-- The parser stores artifacts and parsed content as it does today.
-- The worker acknowledges the Redis message.
+- parser 按现有逻辑保存解析结果和 MinIO artifacts。
+- worker ack 对应 Redis 消息。
 
-On failure:
+失败时：
 
-- The file is marked `parse_failed` using the existing parser/worker semantics.
-- The worker logs the failure.
-- The worker acknowledges the Redis message.
-- Other in-flight tasks continue running.
+- 文件状态按现有语义标记为 `parse_failed`。
+- worker 记录错误日志。
+- worker 仍然 ack 对应 Redis 消息。
+- 其他正在执行的任务不受影响。
 
-## Shutdown Behavior
+## 退出行为
 
-On normal interruption, the worker should stop reading new messages and wait for currently running futures to finish before exiting. This keeps the existing at-most-once practical behavior: a task that was already started is allowed to finish and ack.
+正常中断时，worker 停止读取新消息，并等待已经提交到线程池的任务完成后退出。这样保留现有的近似 at-most-once 行为：已经开始处理的任务尽量跑完并 ack。
 
-Hard container termination can still interrupt in-flight tasks. Handling that with Redis pending reclaim is outside this design.
+如果容器被强制杀掉，正在执行的任务仍可能中断。用 Redis pending reclaim 处理这种情况不在本次范围内。
 
-## Logging
+## 日志
 
-At startup, log:
+启动时记录：
 
 ```text
 Worker Consumer Name: worker_...
 WORKER_CONCURRENCY=N
 ```
 
-During scheduling, log concise state changes such as:
+调度循环中可以低频记录：
 
 ```text
 in_flight=X free_slots=Y received=Z
 ```
 
-Per-task logs keep the current shape:
+单任务日志保持当前风格：
 
 ```text
 Processing task: ...
@@ -132,33 +137,33 @@ Error processing task ...
 Task ... processed and acknowledged
 ```
 
-## Tests
+## 测试
 
-Add worker scheduling tests with fake Redis and fake task processing:
+新增 worker 调度测试，使用 fake Redis 和 fake task processor，不调用真实 MinerU 推理：
 
-- `WORKER_CONCURRENCY=1` runs at most one task at a time.
-- `WORKER_CONCURRENCY=3` runs at most three tasks at a time.
-- Redis reads are capped by free slots.
-- Messages are acknowledged only after task futures complete.
-- Failed tasks are acknowledged and do not block other in-flight tasks.
-- Invalid `WORKER_CONCURRENCY` values fall back to `1`.
+- `WORKER_CONCURRENCY=1` 时，同一时间最多 1 个任务运行。
+- `WORKER_CONCURRENCY=3` 时，同一时间最多 3 个任务运行。
+- Redis 每轮读取数量不超过空闲槽位。
+- 任务 future 完成以后才 ack。
+- 失败任务也会 ack，且不会阻塞其他正在执行的任务。
+- 非法 `WORKER_CONCURRENCY` 会回退到 `1`。
 
-Existing parser and MinerU API client tests should continue to pass. No test should call real MinerU inference.
+现有 parser 和 MinerU API client 测试继续保持通过。
 
-## Deployment Notes
+## 部署建议
 
-For a MinerU API router with known capacity, set:
+对已知容量的 MinerU API router，配置时满足：
 
 ```text
 WORKER_REPLICAS * WORKER_CONCURRENCY <= MinerU parse slot capacity
 ```
 
-Start conservatively and increase until GPU utilization is high without causing excessive MinerU queueing or timeouts.
+建议从保守值开始调大，观察 GPU 利用率、MinerU 队列等待和超时情况。
 
-For multi-GPU deployments, prefer:
+多 GPU 部署推荐开启：
 
 ```text
 MINERU_API_USE_ASYNC_TASKS=1
 ```
 
-This avoids holding a single long-running `/file_parse` HTTP request open for each parse slot.
+这样每个 worker 执行槽不会长时间挂在一个同步 `/file_parse` HTTP 请求上，而是使用 MinerU 的任务提交、轮询和取结果接口。
