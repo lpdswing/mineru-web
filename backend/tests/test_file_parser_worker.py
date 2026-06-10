@@ -57,6 +57,14 @@ def test_process_stream_message_raises_json_decode_error_for_bad_payload(monkeyp
         worker.process_stream_message(b"1-0", {b"data": b"not-json"})
 
 
+def test_process_task_handles_error_before_file_lookup():
+    class BrokenDb:
+        def query(self, model):
+            raise RuntimeError("db is down")
+
+    worker.process_task({"file_id": 1, "user_id": "u1"}, BrokenDb())
+
+
 class FakeRedis:
     def __init__(self, messages):
         self.messages = list(messages)

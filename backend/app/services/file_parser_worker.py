@@ -63,6 +63,7 @@ def process_task(task_data: dict, db: Session):
         task_data (dict): 任务数据，包含 file_id, user_id, parse_method
         db (Session): 数据库会话
     """
+    file = None
     try:
         file_id = task_data.get("file_id")
         user_id = task_data.get("user_id")
