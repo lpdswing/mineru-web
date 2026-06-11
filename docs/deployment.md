@@ -70,10 +70,12 @@ POPO_ENABLED=0
 启用 Popo 服务时，使用 compose override 和 `popo` profile：
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.popo.yml --profile popo up -d
+POPO_ENABLED=1 docker compose --env-file .env -f docker-compose.yml -f docker-compose.popo.yml --profile popo up -d
 ```
 
-Popo 作为独立服务运行，worker 只通过 `POPO_API_URL` 调用它，默认地址为 `http://popo-postprocessor:8010`。Popo 处理失败不会把文件解析标记为失败；主解析结果仍按 MinerU 解析状态保存。
+也可以把 `POPO_ENABLED=1` 写入 `.env` 后再执行上面的 `docker compose` 命令。
+
+Popo 作为独立服务运行，worker 只通过 `POPO_API_URL` 调用它，默认地址为 `http://popo-postprocessor:8010`。Popo 容器默认通过 `POPO_MINIO_ENDPOINT=minio:9000` 访问 compose 内的 MinIO；如果接入外部 MinIO，设置 `POPO_MINIO_ENDPOINT` 为 Popo 容器可访问的地址。Popo 处理失败不会把文件解析标记为失败；主解析结果仍按 MinerU 解析状态保存。
 
 Popo 镜像较重，因为构建时会安装上游 MinerU-Popo 和 CUDA 依赖。当前 Dockerfile 会把上游依赖中的 `click==8.3.1` patch 为 `click==8.2.1`，用于兼容 ray。上游仓库 clone 目前未固定 commit，后续部署加固时应 pin 到明确版本。
 
@@ -248,6 +250,7 @@ Compose 配置：
 ```bash
 MINIO_ENDPOINT=127.0.0.1:9000 docker compose -f docker-compose.yml config --quiet
 MINIO_ENDPOINT=127.0.0.1:9000 docker compose -f docker-compose.mac.yml config --quiet
+MINIO_ENDPOINT=127.0.0.1:9000 docker compose -f docker-compose.yml -f docker-compose.popo.yml --profile popo config --quiet
 ```
 
 实际 Linux 部署时，把 `127.0.0.1:9000` 换成服务器 IP 或域名。

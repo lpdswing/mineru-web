@@ -8,7 +8,7 @@ services:
     ports:
       - "8010:8010"
     environment:
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT}
+      - MINIO_ENDPOINT=${POPO_MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
       - POPO_MODEL_PATH=${POPO_MODEL_PATH:-/models/MinerU-Popo}
