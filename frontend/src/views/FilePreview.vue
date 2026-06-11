@@ -168,7 +168,7 @@
             </div>
             <el-empty
               v-else-if="markdownVariant === 'popo' && !parsedContent"
-              :description="popoStatus?.message || 'Popo 结果暂不可用'"
+              :description="popoEmptyDescription"
               :image-size="100"
             />
             <div v-else class="markdown-content" v-html="renderedContent"></div>
@@ -194,6 +194,13 @@ import 'katex/dist/katex.min.css'
 import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import { getUserId } from '@/utils/user'
+import {
+  ExportFormatNames,
+  type ExportFormat,
+  type MarkdownVariant,
+  type PopoStatus,
+  type PopoStatusValue
+} from '@/types/file'
 
 const route = useRoute()
 const md = MarkdownIt({ html: true, linkify: true, typographer: true }).use(mk)
@@ -205,9 +212,6 @@ interface FileItem {
   uploadTime: string
   status: string
 }
-
-type MarkdownVariant = 'markdown' | 'markdown_page' | 'popo'
-type PopoStatusValue = 'not_available' | 'processing' | 'success' | 'failed' | 'skipped'
 
 const sidebarCollapsed = ref(false)
 const allFiles = ref<FileItem[]>([])
@@ -319,47 +323,78 @@ const page = ref(1)
 const parsedContent = ref('')
 const loading = ref(false)
 const hasMore = ref(true)
+let markdownRequestSeq = 0
 const markdownVariant = ref<MarkdownVariant>('markdown')
-const popoStatus = ref<{ status: PopoStatusValue; message?: string } | null>(null)
+const popoStatus = ref<PopoStatus | null>(null)
 const markdownVariantNames: Record<MarkdownVariant, string> = {
   markdown: '原始 Markdown',
   markdown_page: '按页 Markdown',
   popo: 'Popo 增强'
 }
+const popoStatusNames: Record<PopoStatusValue, string> = {
+  not_available: 'Popo 结果暂不可用',
+  processing: 'Popo 结果生成中',
+  success: 'Popo 结果暂不可用',
+  failed: 'Popo 处理失败',
+  skipped: 'Popo 已跳过'
+}
+const popoEmptyDescription = computed(() => {
+  if (!popoStatus.value) return 'Popo 结果暂不可用'
+  return popoStatus.value.message || popoStatusNames[popoStatus.value.status]
+})
+
+const isLatestMarkdownRequest = (seq: number, fileId: string, variant: MarkdownVariant) => {
+  return seq === markdownRequestSeq
+    && currentFile.value?.id === fileId
+    && markdownVariant.value === variant
+}
 
 const fetchParsedContent = async () => {
   if (!currentFile.value) return
+  const fileId = currentFile.value.id
+  const variant = markdownVariant.value
+  const seq = ++markdownRequestSeq
   loading.value = true
   try {
-    const res = await axios.get(`/api/files/${currentFile.value.id}/parsed_content`, {
-      params: { variant: markdownVariant.value },
+    const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
+      params: { variant },
       headers: { 'X-User-Id': getUserId() }
     })
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     parsedContent.value = res.data || ''
     popoStatus.value = null
   } catch (e) {
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     parsedContent.value = ''
-    if (markdownVariant.value === 'popo') {
-      await fetchPopoStatus()
+    if (variant === 'popo') {
+      await fetchPopoStatus(fileId, seq, variant)
     } else {
       ElMessage.error('获取解析内容失败')
     }
   } finally {
-    loading.value = false
+    if (isLatestMarkdownRequest(seq, fileId, variant)) {
+      loading.value = false
+    }
   }
 }
 
-const fetchPopoStatus = async () => {
-  if (!currentFile.value) {
+const fetchPopoStatus = async (
+  fileId = currentFile.value?.id,
+  seq = markdownRequestSeq,
+  variant = markdownVariant.value
+) => {
+  if (!fileId) {
     popoStatus.value = { status: 'not_available', message: '' }
     return
   }
   try {
-    const res = await axios.get(`/api/files/${currentFile.value.id}/popo/status`, {
+    const res = await axios.get(`/api/files/${fileId}/popo/status`, {
       headers: { 'X-User-Id': getUserId() }
     })
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     popoStatus.value = res.data || { status: 'not_available', message: '' }
   } catch (e) {
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     popoStatus.value = { status: 'not_available', message: '' }
   }
 }
@@ -379,18 +414,6 @@ const handleViewMode = (mode: 'origin' | 'markdown') => {
 watch(viewMode, (newMode) => {
   if (newMode !== 'origin') fetchParsedContent()
 })
-
-const ExportFormats = {
-  MARKDOWN: 'markdown',
-  MARKDOWN_PAGE: 'markdown_page',
-  MARKDOWN_POPO: 'markdown_popo'
-} as const
-type ExportFormat = typeof ExportFormats[keyof typeof ExportFormats]
-const ExportFormatNames: Record<ExportFormat, string> = {
-  [ExportFormats.MARKDOWN]: 'Markdown',
-  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码',
-  [ExportFormats.MARKDOWN_POPO]: 'Popo Markdown'
-}
 
 const handleExport = async (format: ExportFormat) => {
   if (!currentFile.value) return
@@ -504,24 +527,31 @@ const handlePdfScroll = async () => {
 
 const loadMarkdownByPage = async () => {
   if (!currentFile.value || loading.value) return
+  const fileId = currentFile.value.id
+  const variant = markdownVariant.value
+  const seq = ++markdownRequestSeq
   loading.value = true
   try {
-    const res = await axios.get(`/api/files/${currentFile.value.id}/parsed_content`, {
-      params: { variant: markdownVariant.value },
+    const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
+      params: { variant },
       headers: { 'X-User-Id': getUserId() }
     })
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     parsedContent.value = res.data || ''
     popoStatus.value = null
     hasMore.value = false
   } catch (e) {
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     parsedContent.value = ''
-    if (markdownVariant.value === 'popo') {
-      await fetchPopoStatus()
+    if (variant === 'popo') {
+      await fetchPopoStatus(fileId, seq, variant)
     } else {
       ElMessage.error('加载内容失败')
     }
   } finally {
-    loading.value = false
+    if (isLatestMarkdownRequest(seq, fileId, variant)) {
+      loading.value = false
+    }
   }
 }
 
@@ -743,17 +773,20 @@ const renderedContent = computed(() => md.render(parsedContent.value || ''))
 
 /* Markdown样式 */
 .markdown-toolbar {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 3px;
   margin-bottom: 16px;
+  max-width: 100%;
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
 }
 
 .markdown-tab {
-  min-width: 92px;
+  flex: 0 1 auto;
+  min-width: 88px;
   height: 30px;
   padding: 0 12px;
   border: none;
