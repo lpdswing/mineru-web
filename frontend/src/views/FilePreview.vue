@@ -107,7 +107,7 @@
       <div class="preview-content">
         <!-- 原文件预览 -->
         <div 
-          v-if="viewMode !== 'markdown'" 
+          v-if="viewMode !== 'markdown' && markdownVariant !== 'compare'"
           class="preview-panel origin-panel"
           :class="{ 'full-width': viewMode === 'origin' }"
         >
@@ -148,7 +148,7 @@
         <div 
           v-if="viewMode !== 'origin'" 
           class="preview-panel markdown-panel"
-          :class="{ 'full-width': viewMode === 'markdown' }"
+          :class="{ 'full-width': viewMode === 'markdown' || markdownVariant === 'compare' }"
         >
           <div class="panel-content">
             <div class="markdown-toolbar">
@@ -157,7 +157,7 @@
                 :key="variant"
                 class="markdown-tab"
                 :class="{ active: markdownVariant === variant }"
-                @click="handleMarkdownVariant(variant as MarkdownVariant)"
+                @click="handleMarkdownVariant(variant as MarkdownViewVariant)"
               >
                 {{ name }}
               </button>
@@ -165,6 +165,32 @@
             <div v-if="loading" class="loading-state">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
               <span>加载中...</span>
+            </div>
+            <div v-else-if="markdownVariant === 'compare'" class="markdown-compare">
+              <section class="compare-column">
+                <div class="compare-header">
+                  <span>Markdown</span>
+                  <small>原始解析结果</small>
+                </div>
+                <div
+                  v-if="compareMarkdownContent"
+                  class="markdown-content compare-content"
+                  v-html="compareRenderedMarkdown"
+                ></div>
+                <el-empty v-else description="Markdown 结果暂不可用" :image-size="100" />
+              </section>
+              <section class="compare-column">
+                <div class="compare-header">
+                  <span>Popo Markdown</span>
+                  <small>{{ comparePopoStatusLabel }}</small>
+                </div>
+                <div
+                  v-if="comparePopoContent"
+                  class="markdown-content compare-content"
+                  v-html="compareRenderedPopo"
+                ></div>
+                <el-empty v-else :description="comparePopoEmptyDescription" :image-size="100" />
+              </section>
             </div>
             <el-empty
               v-else-if="markdownVariant === 'popo' && !parsedContent"
@@ -324,12 +350,17 @@ const parsedContent = ref('')
 const loading = ref(false)
 const hasMore = ref(true)
 let markdownRequestSeq = 0
-const markdownVariant = ref<MarkdownVariant>('markdown')
+type MarkdownViewVariant = MarkdownVariant | 'compare'
+const markdownVariant = ref<MarkdownViewVariant>('markdown')
 const popoStatus = ref<PopoStatus | null>(null)
-const markdownVariantNames: Record<MarkdownVariant, string> = {
+const compareMarkdownContent = ref('')
+const comparePopoContent = ref('')
+const comparePopoStatus = ref<PopoStatus | null>(null)
+const markdownVariantNames: Record<MarkdownViewVariant, string> = {
   markdown: '原始 Markdown',
   markdown_page: '按页 Markdown',
-  popo: 'Popo 增强'
+  popo: 'Popo 增强',
+  compare: '对比'
 }
 const popoStatusNames: Record<PopoStatusValue, string> = {
   not_available: 'Popo 结果暂不可用',
@@ -342,8 +373,17 @@ const popoEmptyDescription = computed(() => {
   if (!popoStatus.value) return 'Popo 结果暂不可用'
   return popoStatus.value.message || popoStatusNames[popoStatus.value.status]
 })
+const comparePopoEmptyDescription = computed(() => {
+  if (!comparePopoStatus.value) return 'Popo 结果暂不可用'
+  return comparePopoStatus.value.message || popoStatusNames[comparePopoStatus.value.status]
+})
+const comparePopoStatusLabel = computed(() => {
+  if (comparePopoContent.value) return '可对比'
+  if (!comparePopoStatus.value) return '未加载'
+  return popoStatusNames[comparePopoStatus.value.status]
+})
 
-const isLatestMarkdownRequest = (seq: number, fileId: string, variant: MarkdownVariant) => {
+const isLatestMarkdownRequest = (seq: number, fileId: string, variant: MarkdownViewVariant) => {
   return seq === markdownRequestSeq
     && currentFile.value?.id === fileId
     && markdownVariant.value === variant
@@ -351,8 +391,12 @@ const isLatestMarkdownRequest = (seq: number, fileId: string, variant: MarkdownV
 
 const fetchParsedContent = async () => {
   if (!currentFile.value) return
+  if (markdownVariant.value === 'compare') {
+    await fetchCompareContent()
+    return
+  }
   const fileId = currentFile.value.id
-  const variant = markdownVariant.value
+  const variant = markdownVariant.value as MarkdownVariant
   const seq = ++markdownRequestSeq
   loading.value = true
   try {
@@ -381,7 +425,7 @@ const fetchParsedContent = async () => {
 const fetchPopoStatus = async (
   fileId = currentFile.value?.id,
   seq = markdownRequestSeq,
-  variant = markdownVariant.value
+  variant: MarkdownViewVariant = markdownVariant.value
 ) => {
   if (!fileId) {
     popoStatus.value = { status: 'not_available', message: '' }
@@ -399,7 +443,53 @@ const fetchPopoStatus = async (
   }
 }
 
-const handleMarkdownVariant = async (variant: MarkdownVariant) => {
+const fetchVariantContent = async (fileId: string, variant: MarkdownVariant) => {
+  const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
+    params: { variant },
+    headers: { 'X-User-Id': getUserId() }
+  })
+  return res.data || ''
+}
+
+const fetchCompareContent = async () => {
+  if (!currentFile.value) return
+  const fileId = currentFile.value.id
+  const variant: MarkdownViewVariant = 'compare'
+  const seq = ++markdownRequestSeq
+  loading.value = true
+  compareMarkdownContent.value = ''
+  comparePopoContent.value = ''
+  comparePopoStatus.value = null
+  try {
+    const [markdownResult, popoResult] = await Promise.allSettled([
+      fetchVariantContent(fileId, 'markdown'),
+      fetchVariantContent(fileId, 'popo')
+    ])
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
+
+    compareMarkdownContent.value = markdownResult.status === 'fulfilled' ? markdownResult.value : ''
+    if (popoResult.status === 'fulfilled') {
+      comparePopoContent.value = popoResult.value
+    } else {
+      try {
+        const statusRes = await axios.get(`/api/files/${fileId}/popo/status`, {
+          headers: { 'X-User-Id': getUserId() }
+        })
+        if (!isLatestMarkdownRequest(seq, fileId, variant)) return
+        comparePopoStatus.value = statusRes.data || { status: 'not_available', message: '' }
+      } catch (e) {
+        if (!isLatestMarkdownRequest(seq, fileId, variant)) return
+        comparePopoStatus.value = { status: 'not_available', message: '' }
+      }
+    }
+  } finally {
+    if (isLatestMarkdownRequest(seq, fileId, variant)) {
+      loading.value = false
+    }
+  }
+}
+
+const handleMarkdownVariant = async (variant: MarkdownViewVariant) => {
   if (markdownVariant.value === variant) return
   markdownVariant.value = variant
   await fetchParsedContent()
@@ -527,8 +617,12 @@ const handlePdfScroll = async () => {
 
 const loadMarkdownByPage = async () => {
   if (!currentFile.value || loading.value) return
+  if (markdownVariant.value === 'compare') {
+    await fetchCompareContent()
+    return
+  }
   const fileId = currentFile.value.id
-  const variant = markdownVariant.value
+  const variant = markdownVariant.value as MarkdownVariant
   const seq = ++markdownRequestSeq
   loading.value = true
   try {
@@ -556,6 +650,8 @@ const loadMarkdownByPage = async () => {
 }
 
 const renderedContent = computed(() => md.render(parsedContent.value || ''))
+const compareRenderedMarkdown = computed(() => md.render(compareMarkdownContent.value || ''))
+const compareRenderedPopo = computed(() => md.render(comparePopoContent.value || ''))
 </script>
 
 <style scoped>
@@ -814,6 +910,59 @@ const renderedContent = computed(() => md.render(parsedContent.value || ''))
   color: var(--text-primary);
 }
 
+.markdown-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  height: calc(100vh - 190px);
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.compare-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.compare-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.compare-header span {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compare-header small {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
 .markdown-content :deep(h1),
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
@@ -909,6 +1058,17 @@ const renderedContent = computed(() => md.render(parsedContent.value || ''))
   
   .preview-panel {
     min-height: 50vh;
+  }
+
+  .markdown-compare {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .compare-column {
+    min-height: 360px;
   }
 }
 

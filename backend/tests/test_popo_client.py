@@ -73,6 +73,20 @@ class FailingHttpClient:
         raise RuntimeError("popo unavailable")
 
 
+class CapturingHttpClient:
+    def __init__(self):
+        self.requests = []
+
+    def post(self, url, json):
+        self.requests.append((url, json))
+        return FakeResponse()
+
+
+class FakeResponse:
+    def raise_for_status(self):
+        return None
+
+
 def test_write_status_uploads_json_status():
     fake_minio = FakeMinio()
     postprocessor = PopoPostprocessor(
@@ -126,3 +140,26 @@ def test_disabled_postprocessor_does_not_create_http_client(monkeypatch):
     )
 
     postprocessor.postprocess("mds", "sample", [])
+
+
+def test_postprocess_includes_source_pdf_in_payload():
+    http_client = CapturingHttpClient()
+    postprocessor = PopoPostprocessor(
+        config=PopoConfig(enabled=True, api_url="http://popo:8010", timeout_seconds=10),
+        http_client=http_client,
+    )
+
+    postprocessor.postprocess(
+        "mds",
+        "sample",
+        [
+            "sample/auto/sample_middle.json",
+            "sample/auto/sample_content_list.json",
+            "sample/auto/sample_model.json",
+        ],
+        source_pdf_path="sample.pdf",
+        source_bucket="mineru-files",
+    )
+
+    assert http_client.requests[0][1]["artifacts"]["source_pdf"] == "sample.pdf"
+    assert http_client.requests[0][1]["source_bucket"] == "mineru-files"

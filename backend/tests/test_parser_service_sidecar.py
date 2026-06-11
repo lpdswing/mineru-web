@@ -78,8 +78,8 @@ class FakePopoPostprocessor:
         self.fail = fail
         self.calls = []
 
-    def postprocess(self, bucket, prefix, uploaded_paths):
-        self.calls.append((bucket, prefix, uploaded_paths))
+    def postprocess(self, bucket, prefix, uploaded_paths, source_pdf_path=None, source_bucket=None):
+        self.calls.append((bucket, prefix, uploaded_paths, source_pdf_path, source_bucket))
         if self.fail:
             raise RuntimeError("popo failed")
 
@@ -146,6 +146,8 @@ def test_parse_file_triggers_popo_after_artifact_sync(monkeypatch):
                 "sample/auto/sample_content_list.json",
                 "sample/auto/sample_model.json",
             ],
+            "uploads/sample.pdf",
+            "mineru-files",
         )
     ]
 

@@ -37,7 +37,7 @@ Required environment variables:
 - `MINIO_ENDPOINT`
 - `MINIO_ACCESS_KEY`
 - `MINIO_SECRET_KEY`
-- `POPO_MODEL_PATH`
+- `POPO_OPENAI_BASE_URL`
 
 Optional environment variables:
 
@@ -45,9 +45,14 @@ Optional environment variables:
   to enable TLS.
 - `POPO_REPO_DIR` defaults to `/opt/MinerU-Popo`.
 - `POPO_WORKSPACE` defaults to `/workspace`.
+- `POPO_ARTIFACT_ROOT` points to a read-only mounted MinerU output directory.
+  Local files are used before falling back to MinIO.
+- `POPO_OPENAI_BASE_URL`, `POPO_OPENAI_API_KEY`, and `POPO_OPENAI_MODEL`
+  configure the OpenAI-compatible/vLLM endpoint used by upstream MinerU-Popo.
 
 ## Build Notes
 
-The Dockerfile clones the upstream MinerU-Popo repository and installs its
-requirements. It adjusts the upstream `click==8.3.1` pin to `click==8.2.1`
-because `ray==2.52.1` excludes the `8.3.*` click series.
+The Dockerfile clones the upstream MinerU-Popo repository but does not install
+its full requirements. The wrapper installs only the lightweight API path
+dependencies and patches upstream `model_utils.py` to read Popo API settings
+from environment variables.

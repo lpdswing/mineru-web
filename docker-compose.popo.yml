@@ -11,16 +11,19 @@ services:
       - MINIO_ENDPOINT=${POPO_MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
-      - POPO_MODEL_PATH=${POPO_MODEL_PATH:-/models/MinerU-Popo}
+      - POPO_ARTIFACT_ROOT=${POPO_ARTIFACT_ROOT:-/mineru-output}
+      - POPO_OPENAI_BASE_URL=${POPO_OPENAI_BASE_URL:-}
+      - POPO_OPENAI_API_KEY=${POPO_OPENAI_API_KEY:-dummy}
+      - POPO_OPENAI_MODEL=${POPO_OPENAI_MODEL:-Popo}
     volumes:
-      - popo_models:/models
       - popo_workspace:/workspace
+      - ${POPO_ARTIFACT_SOURCE:-mineru_api_output}:/mineru-output:ro
     networks:
       - mineru-network
 
 volumes:
-  popo_models:
   popo_workspace:
+  mineru_api_output:
 
 networks:
   mineru-network:

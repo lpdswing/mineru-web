@@ -66,12 +66,21 @@ class PopoPostprocessor:
         self.minio = minio
         self._http_client = http_client
 
-    def postprocess(self, bucket: str, prefix: str, uploaded_paths: list[str]) -> None:
+    def postprocess(
+        self,
+        bucket: str,
+        prefix: str,
+        uploaded_paths: list[str],
+        source_pdf_path: str | None = None,
+        source_bucket: str | None = None,
+    ) -> None:
         if not self.config.enabled:
             return
 
         outputs = build_popo_outputs(prefix)
         artifacts = discover_popo_artifacts(uploaded_paths)
+        if source_pdf_path:
+            artifacts["source_pdf"] = source_pdf_path
         missing = [name for name in _required_artifacts() if name not in artifacts]
         if missing:
             self._write_status_best_effort(
@@ -84,6 +93,7 @@ class PopoPostprocessor:
 
         payload = {
             "bucket": bucket,
+            "source_bucket": source_bucket or bucket,
             "prefix": prefix,
             "artifacts": artifacts,
             "outputs": outputs,
@@ -126,4 +136,4 @@ class PopoPostprocessor:
 
 
 def _required_artifacts() -> list[str]:
-    return ["middle_json", "content_list_json", "model_json"]
+    return ["middle_json", "content_list_json", "model_json", "source_pdf"]

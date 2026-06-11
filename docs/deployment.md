@@ -77,7 +77,17 @@ POPO_ENABLED=1 docker compose --env-file .env -f docker-compose.yml -f docker-co
 
 Popo 作为独立服务运行，worker 只通过 `POPO_API_URL` 调用它，默认地址为 `http://popo-postprocessor:8010`。Popo 容器默认通过 `POPO_MINIO_ENDPOINT=minio:9000` 访问 compose 内的 MinIO；如果接入外部 MinIO，设置 `POPO_MINIO_ENDPOINT` 为 Popo 容器可访问的地址。Popo 处理失败不会把文件解析标记为失败；主解析结果仍按 MinerU 解析状态保存。
 
-Popo 镜像较重，因为构建时会安装上游 MinerU-Popo 和 CUDA 依赖。当前 Dockerfile 会把上游依赖中的 `click==8.3.1` patch 为 `click==8.2.1`，用于兼容 ray。上游仓库 clone 目前未固定 commit，后续部署加固时应 pin 到明确版本。
+`popo-postprocessor` 是轻量后处理 wrapper，不安装 MinerU-Popo 上游 CUDA/transformers 全量依赖，也不在容器内加载模型。它只调用 OpenAI-compatible/vLLM endpoint：
+
+```text
+POPO_OPENAI_BASE_URL=http://popo-vllm:8000/v1
+POPO_OPENAI_API_KEY=dummy
+POPO_OPENAI_MODEL=Popo
+```
+
+Popo 输入 artifact 默认优先从 `POPO_ARTIFACT_ROOT=/mineru-output` 读取。`docker-compose.popo.yml` 会把 `POPO_ARTIFACT_SOURCE=mineru_api_output` 只读挂载到该目录；如果 MinerU API 跑在 macOS host 上，可以把 `POPO_ARTIFACT_SOURCE` 改成本机 MinerU `output` 目录的绝对路径。如果文件不在挂载目录里，Popo wrapper 会回退到 MinIO 下载。Popo 输出仍写回 MinIO，供前端预览和导出读取。
+
+当前 Dockerfile 仍会 clone 上游 MinerU-Popo 仓库并 patch `post_processing/model_utils.py`，让 `popo_generate()` 从 `POPO_OPENAI_*` 环境变量读取 API 配置。上游仓库 clone 目前未固定 commit，后续部署加固时应 pin 到明确版本。
 
 ## Linux / 服务器部署
 

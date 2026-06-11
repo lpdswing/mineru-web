@@ -6,6 +6,7 @@ from app.pipeline import PopoPipeline
 
 class PopoRequest(BaseModel):
     bucket: str
+    source_bucket: str | None = None
     prefix: str
     artifacts: dict[str, str]
     outputs: dict[str, str]

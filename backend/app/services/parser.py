@@ -95,6 +95,7 @@ class ParserService:
         table_enable: bool,
         backend: str,
         mds_bucket: str,
+        source_pdf_path: str,
     ) -> list[str]:
         if file_extension not in PDF_EXTENSIONS + IMAGE_EXTENSIONS:
             raise ValueError(f"不支持的文件类型: {file_extension}")
@@ -111,7 +112,13 @@ class ParserService:
         artifact_sync = self.artifact_sync_factory(mds_bucket)
         synced = artifact_sync.sync_zip(result.content, output_name=file_name)
         try:
-            self.popo_postprocessor.postprocess(mds_bucket, file_name, synced.uploaded_paths)
+            self.popo_postprocessor.postprocess(
+                mds_bucket,
+                file_name,
+                synced.uploaded_paths,
+                source_pdf_path=source_pdf_path,
+                source_bucket=MINIO_BUCKET,
+            )
         except Exception as exc:
             logger.warning(f"Popo postprocess skipped for {file_name}: {exc}")
         return [synced.markdown]
@@ -157,6 +164,7 @@ class ParserService:
                 settings.get("table_recognition", True),
                 backend=backend,
                 mds_bucket=mds_bucket,
+                source_pdf_path=file.minio_path,
             )
 
             parsed_content = ParsedContent(
