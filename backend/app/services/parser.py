@@ -19,6 +19,7 @@ from app.utils.redis_client import redis_client
 
 PDF_EXTENSIONS = [".pdf"]
 IMAGE_EXTENSIONS = [".png", ".jpeg", ".jp2", ".webp", ".gif", ".bmp", ".jpg", ".tiff"]
+OFFICE_EXTENSIONS = [".docx", ".pptx", ".xlsx"]
 
 PARSER_CHANNEL = "file_parser_tasks"
 PARSER_STREAM = "file_parser_stream"
@@ -97,7 +98,7 @@ class ParserService:
         mds_bucket: str,
         source_pdf_path: str,
     ) -> list[str]:
-        if file_extension not in PDF_EXTENSIONS + IMAGE_EXTENSIONS:
+        if file_extension not in PDF_EXTENSIONS + IMAGE_EXTENSIONS + OFFICE_EXTENSIONS:
             raise ValueError(f"不支持的文件类型: {file_extension}")
 
         result = self.mineru_api_client.parse_file(

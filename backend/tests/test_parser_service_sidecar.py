@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from app.models.enums import FileStatus
 from app.services.parser import ParserService
 
@@ -112,6 +114,55 @@ def test_parse_file_uses_mineru_api_and_artifact_sync(monkeypatch):
     assert file.status == FileStatus.PARSED
     assert file.error_message is None
     assert db.added[0].content == "# parsed"
+
+
+@pytest.mark.parametrize("extension", [".docx", ".pptx", ".xlsx"])
+def test_parse_file_accepts_mineru_office_formats(monkeypatch, extension):
+    fake_client = FakeApiClient()
+    db = FakeDb()
+    service = ParserService(
+        db,
+        mineru_api_client=fake_client,
+        artifact_sync_factory=lambda bucket: FakeArtifactSync(),
+    )
+    file = SimpleNamespace(
+        id=1,
+        minio_path=f"uploads/sample{extension}",
+        status=FileStatus.PENDING,
+        start_at=None,
+        finish_at=None,
+        error_message=None,
+    )
+
+    monkeypatch.setattr("app.services.parser.minio_client", FakeMinio())
+    monkeypatch.setattr("app.services.parser.get_buckets", lambda: ["mds"])
+
+    assert service.parse_file(file, user_id="u1") == {"status": "success"}
+    assert fake_client.kwargs["filename"] == f"sample{extension}"
+    assert file.status == FileStatus.PARSED
+
+
+def test_parse_file_rejects_legacy_xls(monkeypatch):
+    service = ParserService(
+        FakeDb(),
+        mineru_api_client=FakeApiClient(),
+        artifact_sync_factory=lambda bucket: FakeArtifactSync(),
+    )
+    file = SimpleNamespace(
+        id=1,
+        minio_path="uploads/sample.xls",
+        status=FileStatus.PENDING,
+        start_at=None,
+        finish_at=None,
+        error_message=None,
+    )
+
+    monkeypatch.setattr("app.services.parser.minio_client", FakeMinio())
+    monkeypatch.setattr("app.services.parser.get_buckets", lambda: ["mds"])
+
+    with pytest.raises(Exception, match="不支持的文件类型: \\.xls"):
+        service.parse_file(file, user_id="u1")
+    assert file.status == FileStatus.PARSE_FAILED
 
 
 def test_parse_file_triggers_popo_after_artifact_sync(monkeypatch):

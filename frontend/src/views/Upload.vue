@@ -20,7 +20,7 @@
           :on-change="handleFileChange"
           :on-remove="handleFileRemove"
           :before-upload="beforeUpload"
-          accept=".pdf,.png,.jpeg,.jp2,.webp,.gif,.bmp,.jpg,.tiff"
+          accept=".pdf,.docx,.pptx,.xlsx,.png,.jpeg,.jp2,.webp,.gif,.bmp,.jpg,.tiff"
           multiple
           :limit="20"
           :disabled="uploading"
@@ -32,7 +32,7 @@
             </div>
             <div class="upload-text">
               <p class="upload-main-text">拖拽文件到此处，或 <span class="upload-link">点击上传</span></p>
-              <p class="upload-hint">支持 PDF、PNG、JPG、JPEG、JP2、WEBP、GIF、BMP、TIFF</p>
+              <p class="upload-hint">支持 PDF、DOCX、PPTX、XLSX、PNG、JPG、JPEG、JP2、WEBP、GIF、BMP、TIFF</p>
             </div>
           </div>
         </el-upload>
@@ -156,13 +156,8 @@ const beforeUpload = (file: File) => {
     return false
   }
 
-  const allowedTypes = ['.pdf', '.png', '.jpg', '.jpeg', '.jp2', '.webp', '.gif', '.bmp', '.tiff']
+  const allowedTypes = ['.pdf', '.docx', '.pptx', '.xlsx', '.png', '.jpg', '.jpeg', '.jp2', '.webp', '.gif', '.bmp', '.tiff']
   const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
-
-  if (fileExt === '.xls' || fileExt === '.xlsx') {
-    ElMessage.error('不支持 Excel 文件上传！')
-    return false
-  }
 
   if (!allowedTypes.includes(fileExt)) {
     ElMessage.error(`不支持的文件类型！`)
