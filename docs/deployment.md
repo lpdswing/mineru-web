@@ -59,6 +59,24 @@ MINERU_API_USE_ASYNC_TASKS=1
 
 `MINERU_API_USE_ASYNC_TASKS=1` 只切换 MinerU API 调用方式为 `/tasks` 提交、轮询、取结果，不会单独增加 worker 并发。
 
+## MinerU-Popo 后处理
+
+MinerU-Popo 后处理默认关闭：
+
+```bash
+POPO_ENABLED=0
+```
+
+启用 Popo 服务时，使用 compose override 和 `popo` profile：
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.popo.yml --profile popo up -d
+```
+
+Popo 作为独立服务运行，worker 只通过 `POPO_API_URL` 调用它，默认地址为 `http://popo-postprocessor:8010`。Popo 处理失败不会把文件解析标记为失败；主解析结果仍按 MinerU 解析状态保存。
+
+Popo 镜像较重，因为构建时会安装上游 MinerU-Popo 和 CUDA 依赖。当前 Dockerfile 会把上游依赖中的 `click==8.3.1` patch 为 `click==8.2.1`，用于兼容 ray。上游仓库 clone 目前未固定 commit，后续部署加固时应 pin 到明确版本。
+
 ## Linux / 服务器部署
 
 `docker-compose.yml` 是统一的 Linux 部署入口。它包含：

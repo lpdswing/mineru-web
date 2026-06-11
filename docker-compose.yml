@@ -42,6 +42,9 @@ services:
       - SERVER_URL=${SERVER_URL:-}
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
       - MINERU_API_USE_ASYNC_TASKS=${MINERU_API_USE_ASYNC_TASKS:-0}
+      - POPO_ENABLED=${POPO_ENABLED:-0}
+      - POPO_API_URL=${POPO_API_URL:-http://popo-postprocessor:8010}
+      - POPO_TIMEOUT_SECONDS=${POPO_TIMEOUT_SECONDS:-1800}
       # WORKER_ID 由代码自动使用容器 hostname 生成，无需手动配置
       # - MINERU_TABLE_MERGE_ENABLE=0  # 关闭表格合并
       # - MINERU_PDF_RENDER_TIMEOUT    # pdf渲染超时配置，默认300s

@@ -46,6 +46,9 @@ services:
       - MINERU_API_URL=http://host.docker.internal:18000
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
       - MINERU_API_USE_ASYNC_TASKS=${MINERU_API_USE_ASYNC_TASKS:-0}
+      - POPO_ENABLED=${POPO_ENABLED:-0}
+      - POPO_API_URL=${POPO_API_URL:-http://popo-postprocessor:8010}
+      - POPO_TIMEOUT_SECONDS=${POPO_TIMEOUT_SECONDS:-1800}
     volumes:
       - backend_data:/data
     depends_on:
