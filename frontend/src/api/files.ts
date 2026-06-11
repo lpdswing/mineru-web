@@ -1,6 +1,6 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat } from '@/types/file'
+import type { FileItem, ExportFormat, MarkdownVariant, PopoStatus } from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -87,8 +87,18 @@ export const filesApi = {
   /**
    * 获取已解析内容
    */
-  getParsedContent(fileId: string) {
-    return api.get(`/files/${fileId}/parsed_content`)
+  getParsedContent(fileId: string, variant: MarkdownVariant = 'markdown') {
+    return api.get<string>(`/files/${fileId}/parsed_content`, {
+      params: { variant }
+    })
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取 Popo 处理状态
+   */
+  getPopoStatus(fileId: string) {
+    return api.get<PopoStatus>(`/files/${fileId}/popo/status`)
       .then(res => res.data)
   },
 

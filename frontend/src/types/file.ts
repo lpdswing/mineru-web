@@ -28,13 +28,22 @@ export interface FileItem {
 // 导出格式类型
 export const ExportFormats = {
   MARKDOWN: 'markdown',
-  MARKDOWN_PAGE: 'markdown_page'
+  MARKDOWN_PAGE: 'markdown_page',
+  MARKDOWN_POPO: 'markdown_popo'
 } as const
 
 export type ExportFormat = typeof ExportFormats[keyof typeof ExportFormats]
+export type MarkdownVariant = 'markdown' | 'markdown_page' | 'popo'
+export type PopoStatusValue = 'not_available' | 'processing' | 'success' | 'failed' | 'skipped'
+
+export interface PopoStatus {
+  status: PopoStatusValue
+  message?: string
+}
 
 // 导出格式显示名称
 export const ExportFormatNames: Record<ExportFormat, string> = {
   [ExportFormats.MARKDOWN]: 'Markdown',
-  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码'
+  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码',
+  [ExportFormats.MARKDOWN_POPO]: 'Popo Markdown'
 }

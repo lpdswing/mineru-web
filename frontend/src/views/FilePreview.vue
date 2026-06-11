@@ -151,10 +151,26 @@
           :class="{ 'full-width': viewMode === 'markdown' }"
         >
           <div class="panel-content">
+            <div class="markdown-toolbar">
+              <button
+                v-for="(name, variant) in markdownVariantNames"
+                :key="variant"
+                class="markdown-tab"
+                :class="{ active: markdownVariant === variant }"
+                @click="handleMarkdownVariant(variant as MarkdownVariant)"
+              >
+                {{ name }}
+              </button>
+            </div>
             <div v-if="loading" class="loading-state">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
               <span>加载中...</span>
             </div>
+            <el-empty
+              v-else-if="markdownVariant === 'popo' && !parsedContent"
+              :description="popoStatus?.message || 'Popo 结果暂不可用'"
+              :image-size="100"
+            />
             <div v-else class="markdown-content" v-html="renderedContent"></div>
           </div>
         </div>
@@ -189,6 +205,9 @@ interface FileItem {
   uploadTime: string
   status: string
 }
+
+type MarkdownVariant = 'markdown' | 'markdown_page' | 'popo'
+type PopoStatusValue = 'not_available' | 'processing' | 'success' | 'failed' | 'skipped'
 
 const sidebarCollapsed = ref(false)
 const allFiles = ref<FileItem[]>([])
@@ -278,6 +297,11 @@ const filteredFiles = computed(() => allFiles.value)
 const selectFile = (file: FileItem) => {
   currentFile.value = file
   page.value = 1
+  markdownVariant.value = 'markdown'
+  popoStatus.value = null
+  parsedContent.value = ''
+  loading.value = false
+  hasMore.value = true
   if (viewMode.value !== 'origin') {
     fetchParsedContent()
   }
@@ -295,21 +319,55 @@ const page = ref(1)
 const parsedContent = ref('')
 const loading = ref(false)
 const hasMore = ref(true)
+const markdownVariant = ref<MarkdownVariant>('markdown')
+const popoStatus = ref<{ status: PopoStatusValue; message?: string } | null>(null)
+const markdownVariantNames: Record<MarkdownVariant, string> = {
+  markdown: '原始 Markdown',
+  markdown_page: '按页 Markdown',
+  popo: 'Popo 增强'
+}
 
 const fetchParsedContent = async () => {
   if (!currentFile.value) return
   loading.value = true
   try {
     const res = await axios.get(`/api/files/${currentFile.value.id}/parsed_content`, {
+      params: { variant: markdownVariant.value },
       headers: { 'X-User-Id': getUserId() }
     })
     parsedContent.value = res.data || ''
+    popoStatus.value = null
   } catch (e) {
-    ElMessage.error('获取解析内容失败')
     parsedContent.value = ''
+    if (markdownVariant.value === 'popo') {
+      await fetchPopoStatus()
+    } else {
+      ElMessage.error('获取解析内容失败')
+    }
   } finally {
     loading.value = false
   }
+}
+
+const fetchPopoStatus = async () => {
+  if (!currentFile.value) {
+    popoStatus.value = { status: 'not_available', message: '' }
+    return
+  }
+  try {
+    const res = await axios.get(`/api/files/${currentFile.value.id}/popo/status`, {
+      headers: { 'X-User-Id': getUserId() }
+    })
+    popoStatus.value = res.data || { status: 'not_available', message: '' }
+  } catch (e) {
+    popoStatus.value = { status: 'not_available', message: '' }
+  }
+}
+
+const handleMarkdownVariant = async (variant: MarkdownVariant) => {
+  if (markdownVariant.value === variant) return
+  markdownVariant.value = variant
+  await fetchParsedContent()
 }
 
 const viewMode = ref<'both' | 'origin' | 'markdown'>('both')
@@ -322,11 +380,16 @@ watch(viewMode, (newMode) => {
   if (newMode !== 'origin') fetchParsedContent()
 })
 
-const ExportFormats = { MARKDOWN: 'markdown', MARKDOWN_PAGE: 'markdown_page' } as const
+const ExportFormats = {
+  MARKDOWN: 'markdown',
+  MARKDOWN_PAGE: 'markdown_page',
+  MARKDOWN_POPO: 'markdown_popo'
+} as const
 type ExportFormat = typeof ExportFormats[keyof typeof ExportFormats]
 const ExportFormatNames: Record<ExportFormat, string> = {
   [ExportFormats.MARKDOWN]: 'Markdown',
-  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码'
+  [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码',
+  [ExportFormats.MARKDOWN_POPO]: 'Popo Markdown'
 }
 
 const handleExport = async (format: ExportFormat) => {
@@ -444,12 +507,19 @@ const loadMarkdownByPage = async () => {
   loading.value = true
   try {
     const res = await axios.get(`/api/files/${currentFile.value.id}/parsed_content`, {
+      params: { variant: markdownVariant.value },
       headers: { 'X-User-Id': getUserId() }
     })
     parsedContent.value = res.data || ''
+    popoStatus.value = null
     hasMore.value = false
   } catch (e) {
-    ElMessage.error('加载内容失败')
+    parsedContent.value = ''
+    if (markdownVariant.value === 'popo') {
+      await fetchPopoStatus()
+    } else {
+      ElMessage.error('加载内容失败')
+    }
   } finally {
     loading.value = false
   }
@@ -672,6 +742,39 @@ const renderedContent = computed(() => md.render(parsedContent.value || ''))
 }
 
 /* Markdown样式 */
+.markdown-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.markdown-tab {
+  min-width: 92px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.markdown-tab:hover {
+  color: var(--text-primary);
+}
+
+.markdown-tab.active {
+  background: var(--bg-primary);
+  color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+}
+
 .markdown-content {
   font-size: 15px;
   line-height: 1.8;
