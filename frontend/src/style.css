@@ -1,35 +1,42 @@
 /* ===== 现代化设计系统 ===== */
 :root {
-  /* 主色调 - 渐变蓝紫 */
-  --primary-color: #6366f1;
-  --primary-light: #818cf8;
-  --primary-dark: #4f46e5;
-  --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  /* 主色调 - System Light */
+  --primary-color: #0071e3;
+  --primary-light: #409cff;
+  --primary-dark: #005bb5;
+  --primary-gradient: linear-gradient(180deg, #0a84ff 0%, #0071e3 100%);
+  --primary-tint: rgb(0 113 227 / 0.1);
+  --primary-faint: rgb(0 113 227 / 0.04);
+  --primary-whisper: rgb(0 113 227 / 0.025);
+  --primary-ring: rgb(0 113 227 / 0.14);
   
   /* 成功/警告/危险 */
-  --success-color: #10b981;
-  --warning-color: #f59e0b;
-  --danger-color: #ef4444;
+  --success-color: #34c759;
+  --success-dark: #28a745;
+  --warning-color: #ff9f0a;
+  --warning-dark: #d98200;
+  --danger-color: #ff3b30;
+  --danger-dark: #d70015;
   
   /* 中性色 */
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-color: #e2e8f0;
-  --border-light: #f1f5f9;
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-muted: #86868b;
+  --border-color: #d2d2d7;
+  --border-light: #e5e5ea;
   
   /* 背景色 */
   --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --bg-tertiary: #f1f5f9;
-  --bg-hover: #f8fafc;
+  --bg-secondary: #f5f5f7;
+  --bg-tertiary: #e9e9ed;
+  --bg-hover: #f2f2f7;
   
   /* 阴影 */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --shadow-glow: 0 0 20px rgb(99 102 241 / 0.15);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-md: 0 8px 24px -18px rgb(29 29 31 / 0.28), 0 2px 8px -6px rgb(29 29 31 / 0.16);
+  --shadow-lg: 0 18px 48px -28px rgb(29 29 31 / 0.32), 0 8px 18px -14px rgb(29 29 31 / 0.18);
+  --shadow-xl: 0 28px 72px -36px rgb(29 29 31 / 0.38), 0 12px 28px -20px rgb(29 29 31 / 0.22);
+  --shadow-glow: 0 0 22px rgb(0 113 227 / 0.14);
   
   /* 圆角 */
   --radius-sm: 6px;
@@ -73,9 +80,9 @@ body {
 :root {
   --el-color-primary: var(--primary-color);
   --el-color-primary-light-3: var(--primary-light);
-  --el-color-primary-light-5: #a5b4fc;
-  --el-color-primary-light-7: #c7d2fe;
-  --el-color-primary-light-9: #e0e7ff;
+  --el-color-primary-light-5: #8ec5ff;
+  --el-color-primary-light-7: #c7e2ff;
+  --el-color-primary-light-9: #e8f2ff;
   --el-color-primary-dark-2: var(--primary-dark);
   --el-color-success: var(--success-color);
   --el-color-warning: var(--warning-color);
@@ -102,12 +109,12 @@ body {
 
 .el-button--primary {
   background: var(--primary-gradient) !important;
-  box-shadow: 0 2px 8px rgb(99 102 241 / 0.3);
+  box-shadow: 0 2px 8px rgb(0 113 227 / 0.24);
 }
 
 .el-button--primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(99 102 241 / 0.4);
+  box-shadow: 0 5px 14px rgb(0 113 227 / 0.3);
 }
 
 .el-button--primary:active {
@@ -115,23 +122,23 @@ body {
 }
 
 .el-button--success {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-  box-shadow: 0 2px 8px rgb(16 185 129 / 0.3);
+  background: linear-gradient(180deg, var(--success-color) 0%, var(--success-dark) 100%) !important;
+  box-shadow: 0 2px 8px rgb(52 199 89 / 0.24);
 }
 
 .el-button--success:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(16 185 129 / 0.4);
+  box-shadow: 0 5px 14px rgb(52 199 89 / 0.3);
 }
 
 .el-button--danger {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  box-shadow: 0 2px 8px rgb(239 68 68 / 0.3);
+  background: linear-gradient(180deg, var(--danger-color) 0%, var(--danger-dark) 100%) !important;
+  box-shadow: 0 2px 8px rgb(255 59 48 / 0.24);
 }
 
 .el-button--danger:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(239 68 68 / 0.4);
+  box-shadow: 0 5px 14px rgb(255 59 48 / 0.3);
 }
 
 .el-button--default {
@@ -161,7 +168,7 @@ body {
 
 .el-input__wrapper.is-focus {
   border-color: var(--primary-color) !important;
-  box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1) !important;
+  box-shadow: 0 0 0 3px var(--primary-ring) !important;
 }
 
 /* 选择器样式优化 */
@@ -178,7 +185,7 @@ body {
 
 .el-select__wrapper.is-focused {
   border-color: var(--primary-color) !important;
-  box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1) !important;
+  box-shadow: 0 0 0 3px var(--primary-ring) !important;
 }
 
 /* 表格样式优化 */
@@ -204,7 +211,7 @@ body {
 }
 
 .el-table__body tr:hover > td.el-table__cell {
-  background: rgb(99 102 241 / 0.04) !important;
+  background: var(--primary-faint) !important;
 }
 
 /* 标签样式优化 */
@@ -216,17 +223,17 @@ body {
 }
 
 .el-tag--success {
-  background: rgb(16 185 129 / 0.1) !important;
+  background: rgb(52 199 89 / 0.12) !important;
   color: var(--success-color) !important;
 }
 
 .el-tag--warning {
-  background: rgb(245 158 11 / 0.1) !important;
+  background: rgb(255 159 10 / 0.12) !important;
   color: var(--warning-color) !important;
 }
 
 .el-tag--danger {
-  background: rgb(239 68 68 / 0.1) !important;
+  background: rgb(255 59 48 / 0.12) !important;
   color: var(--danger-color) !important;
 }
 
@@ -236,7 +243,7 @@ body {
 }
 
 .el-tag--primary {
-  background: rgb(99 102 241 / 0.1) !important;
+  background: var(--primary-tint) !important;
   color: var(--primary-color) !important;
 }
 
@@ -292,7 +299,7 @@ body {
 
 .el-upload-dragger:hover {
   border-color: var(--primary-color) !important;
-  background: rgb(99 102 241 / 0.02) !important;
+  background: var(--primary-whisper) !important;
 }
 
 /* 空状态样式优化 */

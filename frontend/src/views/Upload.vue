@@ -349,7 +349,7 @@ const handleUpload = async () => {
 
 .upload-dragger :deep(.el-upload-dragger:hover) {
   border-color: var(--primary-color);
-  background: rgb(99 102 241 / 0.02);
+  background: var(--primary-whisper);
 }
 
 .upload-content {
@@ -363,7 +363,7 @@ const handleUpload = async () => {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: rgb(99 102 241 / 0.1);
+  background: var(--primary-tint);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -470,7 +470,7 @@ const handleUpload = async () => {
 }
 
 .file-uploading {
-  background: rgb(99 102 241 / 0.04);
+  background: var(--primary-faint);
 }
 
 .file-icon {
@@ -531,17 +531,17 @@ const handleUpload = async () => {
 }
 
 .status-uploading {
-  background: rgb(99 102 241 / 0.1);
+  background: var(--primary-tint);
   color: var(--primary-color);
 }
 
 .status-success {
-  background: rgb(16 185 129 / 0.1);
+  background: rgb(52 199 89 / 0.12);
   color: var(--success-color);
 }
 
 .status-error {
-  background: rgb(239 68 68 / 0.1);
+  background: rgb(255 59 48 / 0.12);
   color: var(--danger-color);
 }
 

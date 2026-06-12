@@ -60,3 +60,5 @@ mineru.json
 models2.0/
 output/
 graphify-out/
+.codex/
+.superpowers/

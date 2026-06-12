@@ -7,19 +7,20 @@ class StatsService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_stats(self) -> dict:
+    def get_stats(self, user_id: str) -> dict:
         """获取统计数据"""
         # 计算总文件数
-        total_files = self.db.query(File).count()
+        user_files = self.db.query(File).filter(File.user_id == user_id)
+        total_files = user_files.count()
 
         # 计算今日上传数
         today = date.today()
-        today_uploads = self.db.query(File).filter(
+        today_uploads = user_files.filter(
             File.upload_time >= datetime.combine(today, datetime.min.time())
         ).count()
 
         # 计算已用空间（MB）
-        used_space = self.db.query(File).with_entities(
+        used_space = user_files.with_entities(
             func.sum(File.size)
         ).scalar() or 0
         used_space = round(used_space / (1024 * 1024), 2)  # 转换为MB

@@ -752,7 +752,7 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .sidebar-file.active {
-  background: rgb(99 102 241 / 0.1);
+  background: var(--primary-tint);
   color: var(--primary-color);
 }
 

@@ -164,7 +164,6 @@ import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check, Connection } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
-import { getUserId } from '@/utils/user'
 import type { MineruBackend, MineruHealthResponse } from '@/api/settings'
 
 interface Settings {
@@ -218,8 +217,7 @@ const saveSettings = async () => {
       formula_recognition: settings.value.formulaRecognition,
       table_recognition: settings.value.tableRecognition,
       version: settings.value.version,
-      backend: settings.value.backend,
-      user_id: getUserId()
+      backend: settings.value.backend
     })
     ElMessage.success('设置已保存')
   } catch (error) {

@@ -1,8 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ensureCurrentUser, fetchCurrentUser, getCurrentUser } from '@/utils/user'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('../views/Login.vue'),
+      meta: { public: true }
+    },
     {
       path: '/',
       name: 'Home',
@@ -33,6 +40,30 @@ const router = createRouter({
       component: () => import('../views/Settings.vue')
     }
   ]
+})
+
+router.beforeEach(async (to) => {
+  if (to.meta.public) {
+    if (getCurrentUser()) {
+      return { path: '/' }
+    }
+    try {
+      await fetchCurrentUser()
+      return { path: '/' }
+    } catch {
+      return true
+    }
+  }
+
+  try {
+    await ensureCurrentUser()
+    return true
+  } catch {
+    return {
+      path: '/login',
+      query: { redirect: to.fullPath }
+    }
+  }
 })
 
 export default router 

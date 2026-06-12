@@ -44,7 +44,7 @@ export const settingsApi = {
   /**
    * 更新用户设置
    */
-  updateSettings(settings: SettingsData & { user_id: string }) {
+  updateSettings(settings: SettingsData) {
     return api.put('/settings', settings)
       .then(res => res.data)
   },
