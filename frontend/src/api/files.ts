@@ -18,12 +18,14 @@ export interface FileListResponse {
 
 export interface UploadResponse {
   total: number
-  success: number
-  failed: number
+  success?: number
+  failed?: number
   files: Array<{
+    id?: string
     filename: string
     status: string
     file_id?: string
+    error_message?: string | null
   }>
 }
 

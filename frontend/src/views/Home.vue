@@ -54,6 +54,9 @@
       <div class="formats-title">支持格式</div>
       <div class="formats-list">
         <span class="format-tag">PDF</span>
+        <span class="format-tag">DOCX</span>
+        <span class="format-tag">PPTX</span>
+        <span class="format-tag">XLSX</span>
         <span class="format-tag">PNG</span>
         <span class="format-tag">JPG</span>
         <span class="format-tag">JPEG</span>

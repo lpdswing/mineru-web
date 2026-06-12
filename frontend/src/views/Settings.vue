@@ -105,9 +105,22 @@
             <div class="section-title">
               <el-icon><Connection /></el-icon>
               <span>解析服务状态</span>
+              <el-button
+                class="section-action"
+                type="primary"
+                link
+                :loading="healthLoading"
+                @click="loadMineruHealth"
+              >
+                刷新
+              </el-button>
             </div>
 
-            <div v-if="mineruHealth" class="health-grid">
+            <div v-if="healthLoading && !mineruHealth" class="loading-state">
+              <el-icon class="is-loading"><RefreshRight /></el-icon>
+              <span>正在检查解析服务...</span>
+            </div>
+            <div v-else-if="mineruHealth" class="health-grid">
               <div class="health-row">
                 <span class="health-label">服务地址</span>
                 <span class="health-value">{{ mineruHealth.base_url || '-' }}</span>
@@ -131,11 +144,11 @@
 
           <!-- 操作按钮 -->
           <div class="form-actions">
-            <el-button @click="resetSettings" size="large">
+            <el-button @click="resetSettings" size="large" :disabled="savingSettings">
               <el-icon><RefreshRight /></el-icon>
               <span>重置</span>
             </el-button>
-            <el-button type="primary" @click="saveSettings" size="large">
+            <el-button type="primary" @click="saveSettings" size="large" :loading="savingSettings">
               <el-icon><Check /></el-icon>
               <span>保存设置</span>
             </el-button>
@@ -174,6 +187,8 @@ const defaultSettings: Settings = {
 
 const settings = ref<Settings>({ ...defaultSettings })
 const mineruHealth = ref<MineruHealthResponse | null>(null)
+const savingSettings = ref(false)
+const healthLoading = ref(false)
 const supportsParseMethod = computed(() => {
   return settings.value.backend === 'pipeline' || settings.value.backend.startsWith('hybrid-')
 })
@@ -189,10 +204,13 @@ const loadSettings = async () => {
       version: data.version || '',
       backend: data.backend || 'pipeline'
     }
-  } catch (error) {}
+  } catch (error) {
+    ElMessage.error('加载设置失败')
+  }
 }
 
 const saveSettings = async () => {
+  savingSettings.value = true
   try {
     await settingsApi.updateSettings({
       force_ocr: settings.value.forceOcr,
@@ -204,7 +222,11 @@ const saveSettings = async () => {
       user_id: getUserId()
     })
     ElMessage.success('设置已保存')
-  } catch (error) {}
+  } catch (error) {
+    ElMessage.error('保存设置失败')
+  } finally {
+    savingSettings.value = false
+  }
 }
 
 const resetSettings = () => {
@@ -213,6 +235,7 @@ const resetSettings = () => {
 }
 
 const loadMineruHealth = async () => {
+  healthLoading.value = true
   try {
     mineruHealth.value = await settingsApi.getMineruHealth()
   } catch (error) {
@@ -221,6 +244,8 @@ const loadMineruHealth = async () => {
       base_url: '',
       error: '无法获取 MinerU API 状态'
     }
+  } finally {
+    healthLoading.value = false
   }
 }
 
@@ -314,6 +339,10 @@ onMounted(() => {
   border-bottom: 1px solid var(--border-light);
 }
 
+.section-action {
+  margin-left: auto;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -353,6 +382,15 @@ onMounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  min-height: 28px;
 }
 
 .health-grid {

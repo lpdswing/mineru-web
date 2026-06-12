@@ -67,18 +67,26 @@
         </div>
         <div class="header-center">
           <div class="view-toggle">
-            <button 
-              class="toggle-btn" 
-              :class="{ active: viewMode === 'origin' || viewMode === 'both' }"
-              @click="handleViewMode('origin')"
+            <button
+              class="toggle-btn"
+              :class="{ active: viewMode === 'origin' }"
+              @click="setViewMode('origin')"
             >
               <el-icon><Document /></el-icon>
               <span>原文件</span>
             </button>
             <button 
               class="toggle-btn" 
-              :class="{ active: viewMode === 'markdown' || viewMode === 'both' }"
-              @click="handleViewMode('markdown')"
+              :class="{ active: viewMode === 'both' }"
+              @click="setViewMode('both')"
+            >
+              <el-icon><Document /></el-icon>
+              <span>左右对照</span>
+            </button>
+            <button 
+              class="toggle-btn" 
+              :class="{ active: viewMode === 'markdown' }"
+              @click="setViewMode('markdown')"
             >
               <el-icon><EditPen /></el-icon>
               <span>Markdown</span>
@@ -112,7 +120,14 @@
           :class="{ 'full-width': viewMode === 'origin' }"
         >
           <div class="panel-content">
-            <template v-if="showOrigin && currentFile">
+            <div v-if="loadingOrigin" class="loading-state">
+              <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+              <span>正在加载原文件...</span>
+            </div>
+            <el-empty v-else-if="originLoadError" :description="originLoadError" :image-size="100">
+              <el-button type="primary" @click="reloadOriginPreview">重试</el-button>
+            </el-empty>
+            <template v-else-if="showOrigin && currentFile">
               <template v-if="isPdf(currentFile.filename)">
                 <iframe 
                   v-if="fileUrl" 
@@ -121,6 +136,7 @@
                   ref="pdfFrame"
                   @load="handlePdfLoad"
                 ></iframe>
+                <el-empty v-else description="原文件暂不可预览" :image-size="100" />
               </template>
               <template v-else-if="isOffice(currentFile.filename)">
                 <div v-if="loadingOffice" class="loading-state">
@@ -130,7 +146,8 @@
                 <div v-else class="office-preview" v-html="officeContent"></div>
               </template>
               <template v-else-if="isImage(currentFile.filename)">
-                <img :src="fileUrl" class="image-preview" />
+                <img v-if="fileUrl" :src="fileUrl" class="image-preview" />
+                <el-empty v-else description="原文件暂不可预览" :image-size="100" />
               </template>
               <template v-else-if="isText(currentFile.filename)">
                 <el-scrollbar>
@@ -166,6 +183,9 @@
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
               <span>加载中...</span>
             </div>
+            <el-empty v-else-if="markdownLoadError" :description="markdownLoadError" :image-size="100">
+              <el-button type="primary" @click="fetchParsedContent">重试</el-button>
+            </el-empty>
             <div v-else-if="markdownVariant === 'compare'" class="markdown-compare">
               <section class="compare-column">
                 <div class="compare-header">
@@ -219,7 +239,8 @@ import mk from 'markdown-it-katex'
 import 'katex/dist/katex.min.css'
 import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
-import { getUserId } from '@/utils/user'
+import api from '@/api'
+import { filesApi } from '@/api/files'
 import {
   ExportFormatNames,
   type ExportFormat,
@@ -251,9 +272,8 @@ const isReady = ref(false)
 // 获取侧边栏文件列表
 const fetchSidebarFiles = async () => {
   try {
-    const res = await axios.get('/api/files', {
-      params: { page: sidebarPage.value, page_size: sidebarPageSize.value, search: fileSearch.value },
-      headers: { 'X-User-Id': getUserId() }
+    const res = await api.get('/files', {
+      params: { page: sidebarPage.value, page_size: sidebarPageSize.value, search: fileSearch.value }
     })
     allFiles.value = res.data.files
     sidebarTotal.value = res.data.total
@@ -267,14 +287,12 @@ const fetchSidebarFiles = async () => {
 // 根据ID获取单个文件信息
 const loadFileById = async (fileId: string) => {
   try {
-    const res = await axios.get(`/api/files/${fileId}`, {
-      headers: { 'X-User-Id': getUserId() }
-    })
+    const res = await api.get(`/files/${fileId}`)
     if (res.data) {
       currentFile.value = res.data
     }
   } catch (e) {
-    console.error('获取文件信息失败', e)
+    ElMessage.error('获取文件信息失败')
   }
 }
 
@@ -330,6 +348,8 @@ const selectFile = (file: FileItem) => {
   markdownVariant.value = 'markdown'
   popoStatus.value = null
   parsedContent.value = ''
+  markdownLoadError.value = ''
+  originLoadError.value = ''
   loading.value = false
   hasMore.value = true
   if (viewMode.value !== 'origin') {
@@ -348,6 +368,7 @@ const isPdf = (name?: string) => name ? /\.pdf$/i.test(name) : false
 const page = ref(1)
 const parsedContent = ref('')
 const loading = ref(false)
+const markdownLoadError = ref('')
 const hasMore = ref(true)
 let markdownRequestSeq = 0
 type MarkdownViewVariant = MarkdownVariant | 'compare'
@@ -365,7 +386,7 @@ const markdownVariantNames: Record<MarkdownViewVariant, string> = {
 const popoStatusNames: Record<PopoStatusValue, string> = {
   not_available: 'Popo 结果暂不可用',
   processing: 'Popo 结果生成中',
-  success: 'Popo 结果暂不可用',
+  success: 'Popo 结果可用',
   failed: 'Popo 处理失败',
   skipped: 'Popo 已跳过'
 }
@@ -399,13 +420,11 @@ const fetchParsedContent = async () => {
   const variant = markdownVariant.value as MarkdownVariant
   const seq = ++markdownRequestSeq
   loading.value = true
+  markdownLoadError.value = ''
   try {
-    const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
-      params: { variant },
-      headers: { 'X-User-Id': getUserId() }
-    })
+    const data = await filesApi.getParsedContent(fileId, variant)
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-    parsedContent.value = res.data || ''
+    parsedContent.value = data || ''
     popoStatus.value = null
   } catch (e) {
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
@@ -413,6 +432,7 @@ const fetchParsedContent = async () => {
     if (variant === 'popo') {
       await fetchPopoStatus(fileId, seq, variant)
     } else {
+      markdownLoadError.value = '解析内容暂不可用或加载失败'
       ElMessage.error('获取解析内容失败')
     }
   } finally {
@@ -432,11 +452,9 @@ const fetchPopoStatus = async (
     return
   }
   try {
-    const res = await axios.get(`/api/files/${fileId}/popo/status`, {
-      headers: { 'X-User-Id': getUserId() }
-    })
+    const res = await filesApi.getPopoStatus(fileId)
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-    popoStatus.value = res.data || { status: 'not_available', message: '' }
+    popoStatus.value = res || { status: 'not_available', message: '' }
   } catch (e) {
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     popoStatus.value = { status: 'not_available', message: '' }
@@ -444,11 +462,7 @@ const fetchPopoStatus = async (
 }
 
 const fetchVariantContent = async (fileId: string, variant: MarkdownVariant) => {
-  const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
-    params: { variant },
-    headers: { 'X-User-Id': getUserId() }
-  })
-  return res.data || ''
+  return await filesApi.getParsedContent(fileId, variant)
 }
 
 const fetchCompareContent = async () => {
@@ -457,6 +471,7 @@ const fetchCompareContent = async () => {
   const variant: MarkdownViewVariant = 'compare'
   const seq = ++markdownRequestSeq
   loading.value = true
+  markdownLoadError.value = ''
   compareMarkdownContent.value = ''
   comparePopoContent.value = ''
   comparePopoStatus.value = null
@@ -472,11 +487,9 @@ const fetchCompareContent = async () => {
       comparePopoContent.value = popoResult.value
     } else {
       try {
-        const statusRes = await axios.get(`/api/files/${fileId}/popo/status`, {
-          headers: { 'X-User-Id': getUserId() }
-        })
+        const statusRes = await filesApi.getPopoStatus(fileId)
         if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-        comparePopoStatus.value = statusRes.data || { status: 'not_available', message: '' }
+        comparePopoStatus.value = statusRes || { status: 'not_available', message: '' }
       } catch (e) {
         if (!isLatestMarkdownRequest(seq, fileId, variant)) return
         comparePopoStatus.value = { status: 'not_available', message: '' }
@@ -497,8 +510,8 @@ const handleMarkdownVariant = async (variant: MarkdownViewVariant) => {
 
 const viewMode = ref<'both' | 'origin' | 'markdown'>('both')
 
-const handleViewMode = (mode: 'origin' | 'markdown') => {
-  viewMode.value = viewMode.value === mode ? 'both' : mode
+const setViewMode = (mode: 'both' | 'origin' | 'markdown') => {
+  viewMode.value = mode
 }
 
 watch(viewMode, (newMode) => {
@@ -507,18 +520,20 @@ watch(viewMode, (newMode) => {
 
 const handleExport = async (format: ExportFormat) => {
   if (!currentFile.value) return
+  if (currentFile.value.status !== 'parsed') {
+    ElMessage.warning('解析完成后才能导出')
+    return
+  }
   try {
-    const res = await axios.get(`/api/files/${currentFile.value.id}/export`, {
-      params: { format },
-      headers: { 'X-User-Id': getUserId() }
-    })
-    if (res.data.status === 'success') {
-      const response = await fetch(res.data.download_url)
+    const res = await filesApi.exportFile(currentFile.value.id, format)
+    if (res.status === 'success') {
+      const response = await fetch(res.download_url)
+      if (!response.ok) throw new Error('download failed')
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = res.data.filename
+      link.download = res.filename
       document.body.appendChild(link)
       link.click()
       window.URL.revokeObjectURL(url)
@@ -535,19 +550,24 @@ const handleExport = async (format: ExportFormat) => {
 const fileUrl = ref('')
 const textContent = ref('')
 const officeContent = ref('')
+const loadingOrigin = ref(false)
 const loadingOffice = ref(false)
+const originLoadError = ref('')
 
 const fetchFileUrl = async () => {
   if (!currentFile.value) return
+  loadingOrigin.value = true
+  originLoadError.value = ''
   try {
-    const res = await axios.get(`/api/files/${currentFile.value.id}/download_url`, {
-      headers: { 'X-User-Id': getUserId() }
-    })
-    fileUrl.value = res.data.url
+    const res = await filesApi.getDownloadUrl(currentFile.value.id)
+    fileUrl.value = res.url
   } catch (e) {
     fileUrl.value = ''
     textContent.value = ''
     officeContent.value = ''
+    originLoadError.value = '获取原文件地址失败'
+  } finally {
+    loadingOrigin.value = false
   }
 }
 
@@ -568,6 +588,7 @@ const previewOfficeFile = async () => {
       officeContent.value = XLSX.utils.sheet_to_html(firstSheet)
     }
   } catch (e) {
+    originLoadError.value = '预览 Office 文件失败，可下载原文件后查看'
     ElMessage.error('预览 Office 文件失败')
     officeContent.value = ''
   } finally {
@@ -582,7 +603,19 @@ const fetchTextContent = async () => {
     textContent.value = res.data
   } catch (e) {
     textContent.value = ''
+    originLoadError.value = '文本预览加载失败'
   }
+}
+
+const reloadOriginPreview = async () => {
+  if (!currentFile.value) return
+  fileUrl.value = ''
+  textContent.value = ''
+  officeContent.value = ''
+  originLoadError.value = ''
+  await fetchFileUrl()
+  if (isText(currentFile.value.filename)) await fetchTextContent()
+  else if (isOffice(currentFile.value.filename)) await previewOfficeFile()
 }
 
 watch(currentFile, async (newFile) => {
@@ -590,9 +623,8 @@ watch(currentFile, async (newFile) => {
   fileUrl.value = ''
   textContent.value = ''
   officeContent.value = ''
-  await fetchFileUrl()
-  if (isText(newFile.filename)) await fetchTextContent()
-  else if (isOffice(newFile.filename)) await previewOfficeFile()
+  originLoadError.value = ''
+  await reloadOriginPreview()
 })
 
 const pdfFrame = ref<HTMLIFrameElement | null>(null)
@@ -625,13 +657,11 @@ const loadMarkdownByPage = async () => {
   const variant = markdownVariant.value as MarkdownVariant
   const seq = ++markdownRequestSeq
   loading.value = true
+  markdownLoadError.value = ''
   try {
-    const res = await axios.get(`/api/files/${fileId}/parsed_content`, {
-      params: { variant },
-      headers: { 'X-User-Id': getUserId() }
-    })
+    const data = await filesApi.getParsedContent(fileId, variant)
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-    parsedContent.value = res.data || ''
+    parsedContent.value = data || ''
     popoStatus.value = null
     hasMore.value = false
   } catch (e) {
@@ -640,6 +670,7 @@ const loadMarkdownByPage = async () => {
     if (variant === 'popo') {
       await fetchPopoStatus(fileId, seq, variant)
     } else {
+      markdownLoadError.value = '解析内容暂不可用或加载失败'
       ElMessage.error('加载内容失败')
     }
   } finally {

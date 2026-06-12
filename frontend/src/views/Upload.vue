@@ -50,11 +50,20 @@
             type="primary" 
             @click="handleUpload" 
             :loading="uploading" 
-            :disabled="uploading || fileList.length === 0"
+            :disabled="uploading || pendingUploadCount === 0"
           >
             <el-icon v-if="!uploading"><UploadFilled /></el-icon>
-            <span>{{ uploading ? '上传中...' : '开始上传' }}</span>
+            <span>{{ uploadButtonText }}</span>
           </el-button>
+        </div>
+
+        <div v-if="uploading || uploadProgress > 0" class="upload-progress">
+          <el-progress :percentage="uploadProgress" :status="uploadProgressStatus" />
+        </div>
+
+        <div v-if="uploadResultMessage && !uploading" class="upload-result">
+          <span>{{ uploadResultMessage }}</span>
+          <el-button type="primary" link @click="router.push('/files')">查看文件</el-button>
         </div>
 
         <div class="file-list">
@@ -74,13 +83,14 @@
                 <span class="file-status" :class="getStatusClass(file.status)">
                   {{ getUploadStatusText(file.status) }}
                 </span>
+                <span v-if="file.message" class="file-message">{{ file.message }}</span>
               </div>
             </div>
             <el-button 
               type="danger" 
               link 
               class="file-remove"
-              @click="handleFileRemove(file)"
+              @click="handleFileRemove(file, index)"
               :disabled="file.status === 'uploading' || uploading"
             >
               <el-icon><Close /></el-icon>
@@ -119,10 +129,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { UploadFilled, Document, Close, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadInstance } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { filesApi } from '@/api/files'
 import { formatFileSize } from '@/utils/format'
 import { getUploadStatusText } from '@/utils/status'
@@ -133,11 +144,27 @@ interface UploadFile {
   status: 'waiting' | 'uploading' | 'success' | 'error'
   raw?: File
   url?: string
+  message?: string
 }
 
 const fileList = ref<UploadFile[]>([])
 const uploading = ref(false)
+const uploadProgress = ref(0)
+const uploadResultMessage = ref('')
 const uploadRef = ref<UploadInstance>()
+const router = useRouter()
+
+const pendingUploadCount = computed(() => fileList.value.filter(file => file.status !== 'success').length)
+const uploadButtonText = computed(() => {
+  if (uploading.value) return `上传中 ${uploadProgress.value}%`
+  if (fileList.value.length > 0 && pendingUploadCount.value === 0) return '已上传'
+  if (fileList.value.some(file => file.status === 'error')) return '重试失败文件'
+  return '开始上传'
+})
+const uploadProgressStatus = computed(() => {
+  if (uploading.value) return undefined
+  return uploadProgress.value === 100 ? 'success' : undefined
+})
 
 const getStatusClass = (status: string) => {
   const map: Record<string, string> = {
@@ -150,17 +177,19 @@ const getStatusClass = (status: string) => {
 }
 
 const beforeUpload = (file: File) => {
-  const isLt200M = file.size / 1024 / 1024 < 200
-  if (!isLt200M) {
-    ElMessage.error('文件大小不能超过 200MB!')
-    return false
-  }
-
   const allowedTypes = ['.pdf', '.docx', '.pptx', '.xlsx', '.png', '.jpg', '.jpeg', '.jp2', '.webp', '.gif', '.bmp', '.tiff']
+  const imageTypes = ['.png', '.jpg', '.jpeg', '.jp2', '.webp', '.gif', '.bmp', '.tiff']
   const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
 
   if (!allowedTypes.includes(fileExt)) {
-    ElMessage.error(`不支持的文件类型！`)
+    ElMessage.error('不支持的文件类型')
+    return false
+  }
+
+  const maxSizeMb = imageTypes.includes(fileExt) ? 10 : 200
+  const isWithinLimit = file.size / 1024 / 1024 <= maxSizeMb
+  if (!isWithinLimit) {
+    ElMessage.error(`${imageTypes.includes(fileExt) ? '图片' : '文档'}大小不能超过 ${maxSizeMb}MB`)
     return false
   }
 
@@ -168,48 +197,90 @@ const beforeUpload = (file: File) => {
 }
 
 const handleFileChange = (file: any) => {
+  if (!file.raw) return
   if (!beforeUpload(file.raw)) return
 
+  uploadResultMessage.value = ''
+  uploadProgress.value = 0
   fileList.value.push({
     name: file.name,
     size: file.size,
     status: 'waiting',
-    raw: file.raw
+    raw: file.raw,
+    message: ''
   })
 }
 
-const handleFileRemove = (file: UploadFile) => {
-  const index = fileList.value.findIndex(f => f.name === file.name)
-  if (index !== -1) {
+const handleFileRemove = (file: UploadFile, index?: number) => {
+  if (typeof index === 'number') {
     fileList.value.splice(index, 1)
+  } else {
+    const foundIndex = fileList.value.findIndex(f => f.name === file.name && f.size === file.size)
+    if (foundIndex !== -1) fileList.value.splice(foundIndex, 1)
+  }
+  if (fileList.value.length === 0) {
+    uploadProgress.value = 0
+    uploadResultMessage.value = ''
   }
 }
 
 const handleUpload = async () => {
-  if (fileList.value.length === 0) {
+  const filesToUpload = fileList.value.filter(file => file.status !== 'success' && file.raw)
+  if (filesToUpload.length === 0) {
     ElMessage.warning('请先选择要上传的文件')
     return
   }
 
   uploading.value = true
+  uploadProgress.value = 0
+  uploadResultMessage.value = ''
+  fileList.value = fileList.value.map(file => (
+    filesToUpload.includes(file) ? { ...file, status: 'uploading', message: '' } : file
+  ))
   try {
     const formData = new FormData()
-    fileList.value.forEach(file => {
+    filesToUpload.forEach(file => {
       if (file.raw) {
         formData.append('files', file.raw)
       }
     })
 
-    const result = await filesApi.uploadFiles(formData)
+    const result = await filesApi.uploadFiles(formData, progress => {
+      uploadProgress.value = progress
+    })
 
     if (result && result.total > 0) {
-      ElMessage.success('文件上传成功，已进入解析队列！')
-      fileList.value = []
+      const uploadedNames = new Set((result.files || []).map(file => file.filename))
+      fileList.value = fileList.value.map(file => {
+        if (!filesToUpload.some(uploadFile => uploadFile.name === file.name && uploadFile.size === file.size)) {
+          return file
+        }
+        const uploaded = uploadedNames.has(file.name)
+        return {
+          ...file,
+          status: uploaded ? 'success' : 'error',
+          message: uploaded ? '已进入解析队列' : '上传结果未确认'
+        }
+      })
+      uploadProgress.value = 100
+      uploadResultMessage.value = `成功上传 ${result.total} 个文件，已进入解析队列`
+      ElMessage.success(uploadResultMessage.value)
       uploadRef.value?.clearFiles()
     } else {
-      ElMessage.error('文件上传失败，请重试！')
+      fileList.value = fileList.value.map(file => (
+        filesToUpload.some(uploadFile => uploadFile.name === file.name && uploadFile.size === file.size)
+          ? { ...file, status: 'error', message: '上传失败，请重试' }
+          : file
+      ))
+      uploadResultMessage.value = '文件上传失败，请重试'
     }
   } catch (error) {
+    fileList.value = fileList.value.map(file => (
+      filesToUpload.some(uploadFile => uploadFile.name === file.name && uploadFile.size === file.size)
+        ? { ...file, status: 'error', message: '上传失败，请重试' }
+        : file
+    ))
+    uploadResultMessage.value = '文件上传失败，请重试'
   } finally {
     uploading.value = false
   }
@@ -360,6 +431,20 @@ const handleUpload = async () => {
   font-weight: 500;
 }
 
+.upload-progress {
+  padding: 12px 16px 0;
+}
+
+.upload-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .file-list {
   flex: 1;
   overflow-y: auto;
@@ -423,6 +508,15 @@ const handleUpload = async () => {
 .file-size {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.file-message {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-status {
