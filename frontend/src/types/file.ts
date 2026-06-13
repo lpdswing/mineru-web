@@ -4,9 +4,9 @@ export type FileStatus = 'pending' | 'parsing' | 'parsed' | 'parse_failed'
 // 后端类型枚举
 export type BackendType =
   | 'pipeline'
-  | 'vlm-auto-engine'
+  | 'vlm-engine'
   | 'vlm-http-client'
-  | 'hybrid-auto-engine'
+  | 'hybrid-engine'
   | 'hybrid-http-client'
   | 'vlm'
   | 'hybrid'

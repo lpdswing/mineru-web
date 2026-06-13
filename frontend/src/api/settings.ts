@@ -2,9 +2,9 @@ import api from './index'
 
 export type MineruBackend =
   | 'pipeline'
-  | 'vlm-auto-engine'
+  | 'vlm-engine'
   | 'vlm-http-client'
-  | 'hybrid-auto-engine'
+  | 'hybrid-engine'
   | 'hybrid-http-client'
   | (string & {})
 

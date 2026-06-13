@@ -2,7 +2,7 @@ FROM vllm/vllm-openai:v0.21.0
 # For CUDA 12.9 hosts, switch to:
 # FROM vllm/vllm-openai:v0.21.0-cu129
 
-ARG MINERU_VERSION=3.2.3
+ARG MINERU_VERSION=3.3.1
 ARG MINERU_MODEL_SOURCE=huggingface
 
 RUN apt-get update && \

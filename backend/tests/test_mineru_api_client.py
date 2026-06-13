@@ -18,7 +18,7 @@ def make_zip_bytes() -> bytes:
 def test_health_returns_normalized_payload():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/health"
-        return httpx.Response(200, json={"status": "healthy", "version": "3.2.3"})
+        return httpx.Response(200, json={"status": "healthy", "version": "3.3.1"})
 
     client = MineruApiClient(
         base_url="http://mineru-router:8002",
@@ -30,7 +30,7 @@ def test_health_returns_normalized_payload():
     assert result["available"] is True
     assert result["base_url"] == "http://mineru-router:8002"
     assert result["status"] == "healthy"
-    assert result["version"] == "3.2.3"
+    assert result["version"] == "3.3.1"
 
 
 def test_health_handles_unavailable_service():
@@ -104,6 +104,33 @@ def test_parse_file_includes_server_url_when_configured():
         filename="sample.pdf",
         file_bytes=b"%PDF",
         backend="hybrid-http-client",
+        parse_method="auto",
+        lang="ch",
+        formula_enable=True,
+        table_enable=True,
+    )
+
+
+def test_parse_file_includes_hybrid_effort_for_mineru_3_3():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        assert b'name="effort"\r\n\r\nhigh' in body
+        return httpx.Response(
+            200,
+            content=make_zip_bytes(),
+            headers={"content-type": "application/zip"},
+        )
+
+    client = MineruApiClient(
+        base_url="http://mineru-router:8002",
+        hybrid_effort="high",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    client.parse_file(
+        filename="sample.pdf",
+        file_bytes=b"%PDF",
+        backend="hybrid-engine",
         parse_method="auto",
         lang="ch",
         formula_enable=True,

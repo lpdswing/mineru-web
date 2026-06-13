@@ -59,10 +59,12 @@ export function getUploadStatusType(status: string): string {
 // 后端配置映射
 export const BackendConfig = {
   pipeline: { icon: 'Pipeline', color: '#409EFF' },
-  'vlm-auto-engine': { icon: 'VLM Auto', color: '#67C23A' },
+  'vlm-engine': { icon: 'VLM Engine', color: '#67C23A' },
   'vlm-http-client': { icon: 'VLM HTTP', color: '#529B2E' },
-  'hybrid-auto-engine': { icon: 'Hybrid Auto', color: '#E6A23C' },
+  'hybrid-engine': { icon: 'Hybrid Engine', color: '#E6A23C' },
   'hybrid-http-client': { icon: 'Hybrid HTTP', color: '#B88230' },
+  'vlm-auto-engine': { icon: 'VLM Auto', color: '#67C23A' },
+  'hybrid-auto-engine': { icon: 'Hybrid Auto', color: '#E6A23C' },
   vlm: { icon: 'VLM', color: '#67C23A' },
   hybrid: { icon: 'Hybrid', color: '#E6A23C' }
 } as const

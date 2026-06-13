@@ -93,9 +93,9 @@
             <el-form-item label="选择引擎">
               <el-select v-model="settings.backend" class="full-width">
                 <el-option label="Pipeline" value="pipeline" />
-                <el-option label="VLM Auto Engine" value="vlm-auto-engine" />
+                <el-option label="VLM Engine" value="vlm-engine" />
                 <el-option label="VLM HTTP Client" value="vlm-http-client" />
-                <el-option label="Hybrid Auto Engine" value="hybrid-auto-engine" />
+                <el-option label="Hybrid Engine" value="hybrid-engine" />
                 <el-option label="Hybrid HTTP Client" value="hybrid-http-client" />
               </el-select>
             </el-form-item>

@@ -2,9 +2,9 @@
 
 Language: English | [中文](README.zh-CN.md)
 
-MinerU Web is a web application for document parsing and result review. It provides file upload, asynchronous parsing, original file preview, Markdown preview, PDF source tracing, Popo-enhanced result comparison, and Markdown export. The current version targets MinerU 3.2.3. The business backend now calls the official MinerU HTTP service instead of depending on MinerU internal Python APIs.
+MinerU Web is a web application for document parsing and result review. It provides file upload, asynchronous parsing, original file preview, Markdown preview, PDF source tracing, Popo-enhanced result comparison, and Markdown export. The current version targets MinerU 3.3.1. The business backend now calls the official MinerU HTTP service instead of depending on MinerU internal Python APIs.
 
-Current release: `v3.2.3`.
+Current release: `v3.3.1`.
 
 ## Features
 
@@ -21,7 +21,7 @@ Current release: `v3.2.3`.
 - MinerU task status and progress visibility on the files page
 - Single-file and batch export for Markdown, page Markdown, and Popo Markdown
 - Optional MinerU-Popo postprocessing; Popo failures do not block the base parsing result
-- Support for official MinerU 3.2.3 backend options
+- Support for official MinerU 3.3.1 backend options
 - Multi-architecture images for the business backend, worker, and frontend
 - Linux server deployment with `mineru-router` for unified multi-GPU scheduling
 - macOS Apple Silicon deployment with MinerU API on the host and business services in Docker
@@ -132,15 +132,23 @@ npm run build
 
 ## Versioning And Releases
 
-This project version follows the compatible MinerU version. Current version `v3.2.3` corresponds to MinerU `3.2.3`:
+This project version follows the compatible MinerU version. Current version `v3.3.1` corresponds to MinerU `3.3.1`:
 
-- `lpdswing/mineru-web-frontend:v3.2.3`
-- `lpdswing/mineru-web-backend:v3.2.3`
-- `lpdswing/mineru-web-mineru-api:v3.2.3`
+- `lpdswing/mineru-web-frontend:v3.3.1`
+- `lpdswing/mineru-web-backend:v3.3.1`
+- `lpdswing/mineru-web-mineru-api:v3.3.1`
 
-Use tag `v3.2.3` when publishing the GitHub Release. After the release is published, `.github/workflows/docker-build.yml` builds and pushes Docker images with the same release tag. If only MinerU Web changes while the compatible MinerU version stays the same, use a suffix such as `v3.2.3-web.1`.
+Use tag `v3.3.1` when publishing the GitHub Release. After the release is published, `.github/workflows/docker-build.yml` builds and pushes Docker images with the same release tag. If only MinerU Web changes while the compatible MinerU version stays the same, use a suffix such as `v3.3.1-web.1`.
 
 ## Changelog
+
+### 3.3.1 - 2026-06-13
+
+- Adapted to MinerU 3.3.1
+- Updated the MinerU API image build to install `mineru[core]==3.3.1`
+- Updated official backend options to `vlm-engine` and `hybrid-engine`
+- Kept legacy `vlm-auto-engine` and `hybrid-auto-engine` settings compatible
+- Added explicit hybrid `effort=high` for MinerU 3.3.1 requests, configurable with `MINERU_API_HYBRID_EFFORT`
 
 ### 3.2.3 - 2026-06-13
 

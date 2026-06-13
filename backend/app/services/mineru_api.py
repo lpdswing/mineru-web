@@ -34,6 +34,7 @@ class MineruApiClient:
         task_timeout_seconds: float | None = None,
         use_async_tasks: bool | None = None,
         server_url: str | None = None,
+        hybrid_effort: str | None = None,
         http_client: httpx.Client | None = None,
     ):
         self.base_url = (base_url or os.getenv("MINERU_API_URL", "http://mineru-router:8002")).rstrip("/")
@@ -46,6 +47,7 @@ class MineruApiClient:
             else os.getenv("MINERU_API_USE_ASYNC_TASKS", "0") == "1"
         )
         self.server_url = server_url or os.getenv("SERVER_URL") or os.getenv("MINERU_API_SERVER_URL")
+        self.hybrid_effort = hybrid_effort or os.getenv("MINERU_API_HYBRID_EFFORT", "high")
         self.http_client = http_client or httpx.Client(timeout=self.timeout_seconds)
 
     def health(self) -> dict[str, Any]:
@@ -169,6 +171,7 @@ class MineruApiClient:
     ) -> dict[str, str]:
         data = {
             "backend": backend,
+            "effort": self.hybrid_effort,
             "parse_method": parse_method,
             "lang_list": lang,
             "formula_enable": str(formula_enable).lower(),

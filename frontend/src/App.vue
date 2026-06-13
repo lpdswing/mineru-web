@@ -118,7 +118,7 @@ const handleLogout = async () => {
         <div class="version-badge">
           <span class="version-dot"></span>
           <transition name="fade">
-            <span v-show="sidebarHover" class="version-text">v3.2.3</span>
+            <span v-show="sidebarHover" class="version-text">v3.3.1</span>
           </transition>
         </div>
       </div>

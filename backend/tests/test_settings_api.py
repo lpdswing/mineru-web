@@ -30,9 +30,9 @@ def test_settings_accepts_all_mineru_api_backends():
     try:
         for backend in [
             "pipeline",
-            "vlm-auto-engine",
+            "vlm-engine",
             "vlm-http-client",
-            "hybrid-auto-engine",
+            "hybrid-engine",
             "hybrid-http-client",
         ]:
             response = client.put(
@@ -49,5 +49,24 @@ def test_settings_accepts_all_mineru_api_backends():
 
             assert response.status_code == 200
             assert response.json()["backend"] == backend
+
+        for backend, normalized in [
+            ("vlm-auto-engine", "vlm-engine"),
+            ("hybrid-auto-engine", "hybrid-engine"),
+        ]:
+            response = client.put(
+                "/api/settings",
+                headers={"X-User-Id": f"settings-{backend}"},
+                json={
+                    "force_ocr": False,
+                    "ocr_lang": "ch",
+                    "formula_recognition": True,
+                    "table_recognition": True,
+                    "backend": backend,
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.json()["backend"] == normalized
     finally:
         app.dependency_overrides.clear()
