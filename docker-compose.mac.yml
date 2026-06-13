@@ -5,6 +5,8 @@ services:
     image: mineru-web-frontend:mac-local
     ports:
       - "8088:80"
+    environment:
+      - TZ=Asia/Shanghai
     depends_on:
       - backend
       - minio
@@ -18,6 +20,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - TZ=Asia/Shanghai
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. 192.168.1.10:9000}
       - MINIO_MDS_BUCKET=mds
@@ -39,6 +42,7 @@ services:
     image: mineru-web-backend:mac-local
     command: python3 run_worker.py
     environment:
+      - TZ=Asia/Shanghai
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. 192.168.1.10:9000}
       - MINIO_MDS_BUCKET=mds
@@ -65,6 +69,8 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -82,6 +88,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
+      TZ: Asia/Shanghai
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:

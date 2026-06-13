@@ -23,6 +23,12 @@ export interface FileItem {
   status: FileStatus
   backend?: BackendType
   error_message?: string | null
+  parse_stage?: string | null
+  progress_percent?: number | null
+  progress_message?: string | null
+  last_heartbeat_at?: string | null
+  mineru_task_id?: string | null
+  mineru_task_status?: string | null
 }
 
 // 导出格式类型

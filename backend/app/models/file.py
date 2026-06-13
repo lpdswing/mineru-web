@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Index
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, Text
 from sqlalchemy.sql import func
 from app.models.base import Base
 from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
@@ -18,6 +18,13 @@ class File(Base):
     version = Column(String(32), nullable=True)
     backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
     error_message = Column(String(1024), nullable=True)
+    parse_stage = Column(String(64), nullable=True)
+    progress_percent = Column(Integer, nullable=True)
+    progress_message = Column(String(255), nullable=True)
+    last_heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+    mineru_task_id = Column(String(128), nullable=True)
+    mineru_task_status = Column(String(64), nullable=True)
+    mineru_task_payload = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     start_at = Column(DateTime(timezone=True), nullable=True)
@@ -42,5 +49,11 @@ class File(Base):
             'backend': normalize_backend_value(self.backend),
             'error_message': self.error_message,
             'start_at': self.start_at.isoformat() if self.start_at else None,
-            'finish_at': self.finish_at.isoformat() if self.finish_at else None
+            'finish_at': self.finish_at.isoformat() if self.finish_at else None,
+            'parse_stage': self.parse_stage,
+            'progress_percent': self.progress_percent,
+            'progress_message': self.progress_message,
+            'last_heartbeat_at': self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+            'mineru_task_id': self.mineru_task_id,
+            'mineru_task_status': self.mineru_task_status
         }
