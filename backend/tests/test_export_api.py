@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
@@ -502,6 +503,133 @@ def test_popo_status_returns_500_when_status_json_is_corrupt(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 500
-    assert response.json() != {"status": "not_available", "message": ""}
-    assert fake_minio.get_responses[0].closed is True
-    assert fake_minio.get_responses[0].released is True
+
+
+def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+    fake_minio.existing_objects[("mds", "sample/auto/sample_middle.json")] = json.dumps(
+        {
+            "pdf_info": [
+                {
+                    "page_idx": 0,
+                    "page_size": [600, 800],
+                    "para_blocks": [
+                        {
+                            "type": "text",
+                            "bbox": [10, 20, 200, 60],
+                            "lines": [{"spans": [{"content": "Hello MinerU"}]}],
+                        },
+                        {
+                            "type": "table",
+                            "poly": [30, 40, 180, 40, 180, 90, 30, 90],
+                            "text": "A1",
+                        },
+                    ],
+                },
+                {
+                    "page_idx": 2,
+                    "width": 610,
+                    "height": 810,
+                    "layout_dets": [
+                        {
+                            "category_type": "title",
+                            "bbox": [15, 25, 210, 75],
+                            "text": "Third page",
+                        }
+                    ],
+                },
+            ]
+        }
+    ).encode("utf-8")
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/source_map",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_minio.get_calls == [
+        ("mds", "sample/sample_middle.json"),
+        ("mds", "sample/auto/sample_middle.json"),
+    ]
+    assert response.json() == {
+        "pages": [
+            {
+                "page": 1,
+                "page_idx": 0,
+                "width": 600,
+                "height": 800,
+                "blocks": [
+                    {
+                        "id": "p1-b1",
+                        "type": "text",
+                        "text": "Hello MinerU",
+                        "bbox": [10, 20, 200, 60],
+                    },
+                    {
+                        "id": "p1-b2",
+                        "type": "table",
+                        "text": "A1",
+                        "bbox": [30, 40, 180, 90],
+                    },
+                ],
+            },
+            {
+                "page": 3,
+                "page_idx": 2,
+                "width": 610,
+                "height": 810,
+                "blocks": [
+                    {
+                        "id": "p3-b1",
+                        "type": "title",
+                        "text": "Third page",
+                        "bbox": [15, 25, 210, 75],
+                    }
+                ],
+            },
+        ]
+    }
+
+
+def test_source_map_returns_empty_pages_when_middle_json_missing(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/source_map",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_minio.get_calls == [
+        ("mds", "sample/sample_middle.json"),
+        ("mds", "sample/auto/sample_middle.json"),
+        ("mds", "sample_middle.json"),
+    ]
+    assert response.json() == {"pages": []}

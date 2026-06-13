@@ -129,13 +129,16 @@
             </el-empty>
             <template v-else-if="showOrigin && currentFile">
               <template v-if="isPdf(currentFile.filename)">
-                <iframe 
-                  v-if="fileUrl" 
-                  :src="fileUrl" 
-                  class="pdf-frame"
-                  ref="pdfFrame"
-                  @load="handlePdfLoad"
-                ></iframe>
+                <PdfSourceViewer
+                  v-if="fileUrl"
+                  ref="pdfViewerRef"
+                  :url="fileUrl"
+                  :source-map="sourceMap"
+                  :active-page="activeSourcePage"
+                  :active-block-id="activeSourceBlockId"
+                  @page-change="handlePdfPageChange"
+                  @block-select="handlePdfBlockSelect"
+                />
                 <el-empty v-else description="原文件暂不可预览" :image-size="100" />
               </template>
               <template v-else-if="isOffice(currentFile.filename)">
@@ -178,6 +181,7 @@
               >
                 {{ name }}
               </button>
+              <span v-if="isPdf(currentFile?.filename)" class="source-trace-chip">{{ sourceTraceLabel }}</span>
             </div>
             <div v-if="loading" class="loading-state">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
@@ -217,6 +221,49 @@
               :description="popoEmptyDescription"
               :image-size="100"
             />
+            <div
+              v-else-if="showPageLinkedMarkdown"
+              ref="markdownScrollRef"
+              class="markdown-pages"
+            >
+              <section
+                v-for="section in pageTraceSections"
+                :key="section.page"
+                class="markdown-page-section"
+                :class="{ active: section.page === activeSourcePage }"
+                :data-page="section.page"
+              >
+                <button
+                  class="markdown-page-meta"
+                  type="button"
+                  @click="handleMarkdownPageClick(section)"
+                >
+                  <span>Page {{ section.page }}</span>
+                  <small>{{ sourceStatusForPage(section.page) }}</small>
+                </button>
+                <div v-if="section.traceBlocks.length" class="markdown-source-list">
+                  <article
+                    v-for="trace in section.traceBlocks"
+                    :key="trace.block.id"
+                    class="markdown-source-block"
+                    :class="{ active: trace.block.id === activeSourceBlockId }"
+                    :data-source-block-id="trace.block.id"
+                    tabindex="0"
+                    role="button"
+                    @click="handleMarkdownBlockClick(section, trace)"
+                    @keydown.enter.prevent="handleMarkdownBlockClick(section, trace)"
+                    @keydown.space.prevent="handleMarkdownBlockClick(section, trace)"
+                  >
+                    <div class="markdown-source-meta">
+                      <span>Block {{ trace.index }}</span>
+                      <small>{{ trace.block.type }}</small>
+                    </div>
+                    <div class="markdown-content trace-content" v-html="trace.html"></div>
+                  </article>
+                </div>
+                <div v-else class="markdown-content page-content" v-html="section.html"></div>
+              </section>
+            </div>
             <div v-else class="markdown-content" v-html="renderedContent"></div>
           </div>
         </div>
@@ -241,12 +288,15 @@ import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import api from '@/api'
 import { filesApi } from '@/api/files'
+import PdfSourceViewer from '@/components/PdfSourceViewer.vue'
 import {
   ExportFormatNames,
   type ExportFormat,
   type MarkdownVariant,
   type PopoStatus,
-  type PopoStatusValue
+  type PopoStatusValue,
+  type SourceBlock,
+  type SourceMap
 } from '@/types/file'
 
 const route = useRoute()
@@ -260,6 +310,31 @@ interface FileItem {
   status: string
 }
 
+interface MarkdownPageSection {
+  page: number
+  markdown: string
+  html: string
+}
+
+interface MarkdownTraceBlock {
+  block: SourceBlock
+  excerpt: string
+  html: string
+  index: number
+  score: number
+}
+
+interface MarkdownTraceSection extends MarkdownPageSection {
+  traceBlocks: MarkdownTraceBlock[]
+}
+
+interface PdfSourceViewerRef {
+  scrollToPage: (pageNumber: number) => Promise<void> | void
+  scrollToBlock: (pageNumber: number, blockId: string) => Promise<void> | void
+}
+
+type MarkdownViewVariant = MarkdownVariant | 'compare'
+
 const sidebarCollapsed = ref(false)
 const allFiles = ref<FileItem[]>([])
 const sidebarPage = ref(1)
@@ -268,6 +343,14 @@ const sidebarTotal = ref(0)
 const fileSearch = ref('')
 const currentFile = ref<FileItem | null>(null)
 const isReady = ref(false)
+const pdfViewerRef = ref<PdfSourceViewerRef | null>(null)
+const markdownScrollRef = ref<HTMLElement | null>(null)
+const sourceMap = ref<SourceMap>({ pages: [] })
+const sourceMapLoading = ref(false)
+const activeSourcePage = ref(1)
+const activeSourceBlockId = ref('')
+const currentPdfPage = ref(1)
+let sourceMapRequestSeq = 0
 
 // 获取侧边栏文件列表
 const fetchSidebarFiles = async () => {
@@ -330,6 +413,10 @@ onMounted(async () => {
     currentFile.value = allFiles.value[0]
   }
 
+  if (currentFile.value) {
+    markdownVariant.value = preferredMarkdownVariant(currentFile.value)
+  }
+
   // 初始化完成
   await nextTick()
   isReady.value = true
@@ -345,13 +432,17 @@ const filteredFiles = computed(() => allFiles.value)
 const selectFile = (file: FileItem) => {
   currentFile.value = file
   page.value = 1
-  markdownVariant.value = 'markdown'
+  markdownVariant.value = preferredMarkdownVariant(file)
   popoStatus.value = null
   parsedContent.value = ''
   markdownLoadError.value = ''
   originLoadError.value = ''
   loading.value = false
   hasMore.value = true
+  sourceMap.value = { pages: [] }
+  activeSourcePage.value = 1
+  activeSourceBlockId.value = ''
+  currentPdfPage.value = 1
   if (viewMode.value !== 'origin') {
     fetchParsedContent()
   }
@@ -364,6 +455,9 @@ const isWord = (name?: string) => name ? /\.(doc|docx)$/i.test(name) : false
 const isExcel = (name?: string) => name ? /\.(xls|xlsx)$/i.test(name) : false
 const isOffice = (name?: string) => name ? /\.(doc|docx|xls|xlsx)$/i.test(name) : false
 const isPdf = (name?: string) => name ? /\.pdf$/i.test(name) : false
+const preferredMarkdownVariant = (file: FileItem): MarkdownViewVariant => {
+  return isPdf(file.filename) ? 'markdown_page' : 'markdown'
+}
 
 const page = ref(1)
 const parsedContent = ref('')
@@ -371,7 +465,6 @@ const loading = ref(false)
 const markdownLoadError = ref('')
 const hasMore = ref(true)
 let markdownRequestSeq = 0
-type MarkdownViewVariant = MarkdownVariant | 'compare'
 const markdownVariant = ref<MarkdownViewVariant>('markdown')
 const popoStatus = ref<PopoStatus | null>(null)
 const compareMarkdownContent = ref('')
@@ -403,6 +496,212 @@ const comparePopoStatusLabel = computed(() => {
   if (!comparePopoStatus.value) return '未加载'
   return popoStatusNames[comparePopoStatus.value.status]
 })
+const sourceBlockTotal = computed(() => {
+  return sourceMap.value.pages.reduce((total, item) => total + item.blocks.length, 0)
+})
+const sourceTraceLabel = computed(() => {
+  if (sourceMapLoading.value) return '溯源加载中'
+  if (sourceBlockTotal.value) return `${sourceBlockTotal.value} 个 bbox`
+  return '暂无 bbox'
+})
+const sourcePageFor = (page: number) => {
+  return sourceMap.value.pages.find((item) => item.page === page)
+}
+const sourceStatusForPage = (page: number) => {
+  const count = sourcePageFor(page)?.blocks.length || 0
+  return count ? `${count} 个 bbox` : '无 bbox'
+}
+const parseMarkdownPages = (content: string): MarkdownPageSection[] => {
+  const matches = Array.from(content.matchAll(/^#\s+Page\s+(\d+)\s*$/gim))
+  if (!matches.length) return []
+
+  return matches
+    .map((match, index) => {
+      const page = Number(match[1])
+      const start = match.index ?? 0
+      const bodyStart = start + match[0].length
+      const nextStart = matches[index + 1]?.index ?? content.length
+      const markdown = content.slice(bodyStart, nextStart).trim()
+      return {
+        page,
+        markdown,
+        html: md.render(markdown || ' ')
+      }
+    })
+    .filter((section) => Number.isFinite(section.page))
+}
+const pageSections = computed(() => parseMarkdownPages(parsedContent.value || ''))
+const showPageLinkedMarkdown = computed(() => {
+  return markdownVariant.value === 'markdown_page' && pageSections.value.length > 0
+})
+const normalizeTraceText = (value: string) => {
+  return value
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+const splitMarkdownChunks = (markdown: string) => {
+  const chunks: string[] = []
+  const current: string[] = []
+  const flush = () => {
+    const chunk = current.join('\n').trim()
+    if (chunk) chunks.push(chunk)
+    current.length = 0
+  }
+
+  markdown.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+    if (!line.trim()) {
+      flush()
+      return
+    }
+    if (/^#{1,6}\s+/.test(line.trim())) {
+      flush()
+      chunks.push(line.trim())
+      return
+    }
+    current.push(line)
+  })
+  flush()
+  return chunks
+}
+const scoreTraceMatch = (markdown: string, sourceText: string) => {
+  const markdownText = normalizeTraceText(markdown)
+  const blockText = normalizeTraceText(sourceText)
+  if (!markdownText || !blockText) return 0
+  const sample = blockText.slice(0, Math.min(96, blockText.length))
+  const head = markdownText.slice(0, Math.min(96, markdownText.length))
+  if (sample && markdownText.includes(sample)) return sample.length + 120
+  if (head && blockText.includes(head)) return head.length + 80
+
+  const blockWords = blockText.split(' ').filter((word) => word.length > 2)
+  if (!blockWords.length) return 0
+  const markdownWords = new Set(markdownText.split(' ').filter((word) => word.length > 2))
+  const overlap = blockWords.filter((word) => markdownWords.has(word)).length
+  return overlap / blockWords.length
+}
+const traceExcerptForBlock = (block: SourceBlock, chunks: string[], usedChunks: Set<number>) => {
+  let bestIndex = -1
+  let bestScore = 0
+  chunks.forEach((chunk, index) => {
+    const score = scoreTraceMatch(chunk, block.text) - (usedChunks.has(index) ? 0.25 : 0)
+    if (score > bestScore) {
+      bestScore = score
+      bestIndex = index
+    }
+  })
+  if (bestIndex >= 0 && bestScore > 0) {
+    usedChunks.add(bestIndex)
+    return { excerpt: chunks[bestIndex], score: bestScore }
+  }
+  return { excerpt: block.text, score: 0 }
+}
+const traceBlocksForSection = (section: MarkdownPageSection): MarkdownTraceBlock[] => {
+  const blocks = sourcePageFor(section.page)?.blocks || []
+  const chunks = splitMarkdownChunks(section.markdown)
+  const usedChunks = new Set<number>()
+  return blocks.map((block, index) => {
+    const trace = traceExcerptForBlock(block, chunks, usedChunks)
+    return {
+      block,
+      excerpt: trace.excerpt,
+      html: md.render(trace.excerpt || block.text || ' '),
+      index: index + 1,
+      score: trace.score
+    }
+  })
+}
+const pageTraceSections = computed<MarkdownTraceSection[]>(() => {
+  return pageSections.value.map((section) => ({
+    ...section,
+    traceBlocks: traceBlocksForSection(section)
+  }))
+})
+const traceSectionForPage = (page: number) => {
+  return pageTraceSections.value.find((section) => section.page === page)
+}
+const findBestBlockForSection = (section: MarkdownPageSection): SourceBlock | null => {
+  const tracedBlock = traceSectionForPage(section.page)?.traceBlocks[0]?.block
+  if (tracedBlock) return tracedBlock
+  const blocks = sourcePageFor(section.page)?.blocks || []
+  if (!blocks.length) return null
+  const sectionText = normalizeTraceText(section.markdown)
+  if (!sectionText) return blocks[0]
+
+  let bestBlock: SourceBlock | null = null
+  let bestScore = 0
+  for (const block of blocks) {
+    const blockText = normalizeTraceText(block.text)
+    if (!blockText) continue
+    const sample = blockText.slice(0, Math.min(80, blockText.length))
+    const head = sectionText.slice(0, Math.min(80, sectionText.length))
+    let score = 0
+    if (sample && sectionText.includes(sample)) {
+      score = sample.length
+    } else if (head && blockText.includes(head)) {
+      score = head.length
+    } else {
+      score = blockText
+        .split(' ')
+        .filter((word) => word.length > 2 && sectionText.includes(word))
+        .length
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestBlock = block
+    }
+  }
+  return bestBlock || blocks[0]
+}
+const scrollMarkdownPageIntoView = async (page: number) => {
+  if (!showPageLinkedMarkdown.value) return
+  await nextTick()
+  const target = markdownScrollRef.value?.querySelector(`[data-page="${page}"]`) as HTMLElement | null
+  target?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+const scrollMarkdownBlockIntoView = async (blockId: string) => {
+  if (!showPageLinkedMarkdown.value || !blockId) return
+  await nextTick()
+  const target = markdownScrollRef.value?.querySelector(`[data-source-block-id="${blockId}"]`) as HTMLElement | null
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+const handleMarkdownPageClick = async (section: MarkdownPageSection) => {
+  const block = findBestBlockForSection(section)
+  currentPdfPage.value = section.page
+  activeSourcePage.value = section.page
+  activeSourceBlockId.value = block?.id || ''
+  if (block) {
+    await pdfViewerRef.value?.scrollToBlock(section.page, block.id)
+  } else {
+    await pdfViewerRef.value?.scrollToPage(section.page)
+  }
+}
+const handleMarkdownBlockClick = async (section: MarkdownTraceSection, trace: MarkdownTraceBlock) => {
+  currentPdfPage.value = section.page
+  activeSourcePage.value = section.page
+  activeSourceBlockId.value = trace.block.id
+  await pdfViewerRef.value?.scrollToBlock(section.page, trace.block.id)
+}
+const handlePdfBlockSelect = (page: number, blockId: string) => {
+  currentPdfPage.value = page
+  activeSourcePage.value = page
+  activeSourceBlockId.value = blockId
+  void scrollMarkdownBlockIntoView(blockId)
+}
+const handlePdfPageChange = (page: number) => {
+  const pageChanged = activeSourcePage.value !== page
+  currentPdfPage.value = page
+  activeSourcePage.value = page
+  if (pageChanged) {
+    activeSourceBlockId.value = sourcePageFor(page)?.blocks[0]?.id || ''
+  }
+  if (activeSourceBlockId.value) {
+    void scrollMarkdownBlockIntoView(activeSourceBlockId.value)
+  } else {
+    void scrollMarkdownPageIntoView(page)
+  }
+}
 
 const isLatestMarkdownRequest = (seq: number, fileId: string, variant: MarkdownViewVariant) => {
   return seq === markdownRequestSeq
@@ -571,6 +870,34 @@ const fetchFileUrl = async () => {
   }
 }
 
+const fetchSourceMap = async () => {
+  const file = currentFile.value
+  const seq = ++sourceMapRequestSeq
+  if (!file || !isPdf(file.filename)) {
+    sourceMap.value = { pages: [] }
+    sourceMapLoading.value = false
+    return
+  }
+
+  sourceMapLoading.value = true
+  try {
+    const data = await filesApi.getSourceMap(file.id)
+    if (seq !== sourceMapRequestSeq || currentFile.value?.id !== file.id) return
+    sourceMap.value = data || { pages: [] }
+    if (!activeSourceBlockId.value) {
+      const activePageSource = sourceMap.value.pages.find((item) => item.page === activeSourcePage.value)
+      activeSourceBlockId.value = activePageSource?.blocks[0]?.id || sourceMap.value.pages[0]?.blocks[0]?.id || ''
+    }
+  } catch (e) {
+    if (seq !== sourceMapRequestSeq || currentFile.value?.id !== file.id) return
+    sourceMap.value = { pages: [] }
+  } finally {
+    if (seq === sourceMapRequestSeq && currentFile.value?.id === file.id) {
+      sourceMapLoading.value = false
+    }
+  }
+}
+
 const previewOfficeFile = async () => {
   if (!currentFile.value || !fileUrl.value) return
   loadingOffice.value = true
@@ -613,7 +940,18 @@ const reloadOriginPreview = async () => {
   textContent.value = ''
   officeContent.value = ''
   originLoadError.value = ''
-  await fetchFileUrl()
+  activeSourcePage.value = 1
+  activeSourceBlockId.value = ''
+  currentPdfPage.value = 1
+  if (isPdf(currentFile.value.filename)) {
+    loadingOrigin.value = true
+    fileUrl.value = filesApi.getContentUrl(currentFile.value.id)
+    await fetchSourceMap()
+    loadingOrigin.value = false
+  } else {
+    sourceMap.value = { pages: [] }
+    await fetchFileUrl()
+  }
   if (isText(currentFile.value.filename)) await fetchTextContent()
   else if (isOffice(currentFile.value.filename)) await previewOfficeFile()
 }
@@ -626,59 +964,6 @@ watch(currentFile, async (newFile) => {
   originLoadError.value = ''
   await reloadOriginPreview()
 })
-
-const pdfFrame = ref<HTMLIFrameElement | null>(null)
-const currentPdfPage = ref(1)
-
-const handlePdfLoad = () => {
-  if (!pdfFrame.value) return
-  pdfFrame.value.contentWindow?.addEventListener('scroll', handlePdfScroll)
-}
-
-const handlePdfScroll = async () => {
-  if (!pdfFrame.value) return
-  const iframe = pdfFrame.value
-  const scrollTop = iframe.contentWindow?.scrollY || 0
-  const pageHeight = iframe.contentWindow?.innerHeight || 0
-  const newPage = Math.floor(scrollTop / pageHeight) + 1
-  if (newPage !== currentPdfPage.value) {
-    currentPdfPage.value = newPage
-    await loadMarkdownByPage()
-  }
-}
-
-const loadMarkdownByPage = async () => {
-  if (!currentFile.value || loading.value) return
-  if (markdownVariant.value === 'compare') {
-    await fetchCompareContent()
-    return
-  }
-  const fileId = currentFile.value.id
-  const variant = markdownVariant.value as MarkdownVariant
-  const seq = ++markdownRequestSeq
-  loading.value = true
-  markdownLoadError.value = ''
-  try {
-    const data = await filesApi.getParsedContent(fileId, variant)
-    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-    parsedContent.value = data || ''
-    popoStatus.value = null
-    hasMore.value = false
-  } catch (e) {
-    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
-    parsedContent.value = ''
-    if (variant === 'popo') {
-      await fetchPopoStatus(fileId, seq, variant)
-    } else {
-      markdownLoadError.value = '解析内容暂不可用或加载失败'
-      ElMessage.error('加载内容失败')
-    }
-  } finally {
-    if (isLatestMarkdownRequest(seq, fileId, variant)) {
-      loading.value = false
-    }
-  }
-}
 
 const renderedContent = computed(() => md.render(parsedContent.value || ''))
 const compareRenderedMarkdown = computed(() => md.render(compareMarkdownContent.value || ''))
@@ -867,12 +1152,6 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   padding: 24px;
 }
 
-.pdf-frame {
-  width: 100%;
-  height: calc(100vh - 120px);
-  border: none;
-}
-
 .image-preview {
   max-width: 100%;
   height: auto;
@@ -911,6 +1190,20 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   border-radius: var(--radius-md);
 }
 
+.source-trace-chip {
+  margin-left: auto;
+  padding: 0 10px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .markdown-tab {
   flex: 0 1 auto;
   min-width: 88px;
@@ -939,6 +1232,137 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   font-size: 15px;
   line-height: 1.8;
   color: var(--text-primary);
+}
+
+.markdown-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.markdown-page-section {
+  position: relative;
+  padding-left: 12px;
+  border-left: 2px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+.markdown-page-section.active {
+  border-left-color: color-mix(in srgb, var(--primary-color) 68%, var(--border-light));
+}
+
+.markdown-page-meta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.markdown-page-meta span {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.markdown-page-meta small {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.markdown-source-block {
+  display: block;
+  width: 100%;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-secondary));
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.markdown-source-block:hover,
+.markdown-source-block:focus-visible {
+  border-color: color-mix(in srgb, var(--primary-color) 36%, var(--border-light));
+  background: var(--bg-primary);
+}
+
+.markdown-source-block.active {
+  border-color: color-mix(in srgb, var(--primary-color) 72%, var(--border-light));
+  background: color-mix(in srgb, var(--primary-tint) 42%, var(--bg-primary));
+  box-shadow: 0 10px 24px rgb(0 0 0 / 6%);
+}
+
+.markdown-source-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.markdown-source-meta span {
+  color: var(--primary-color);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.markdown-source-meta small {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-content {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.trace-content :deep(h1),
+.trace-content :deep(h2),
+.trace-content :deep(h3) {
+  margin-top: 0.25em;
+  font-size: 1.06em;
+}
+
+.trace-content :deep(p),
+.trace-content :deep(ul),
+.trace-content :deep(ol) {
+  margin: 0.45em 0;
+}
+
+.trace-content :deep(:first-child) {
+  margin-top: 0;
+}
+
+.trace-content :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+.page-content {
+  padding: 6px 16px 16px;
 }
 
 .markdown-compare {
@@ -1069,20 +1493,6 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 @media (max-width: 1024px) {
-  .preview-sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 100;
-    box-shadow: var(--shadow-xl);
-  }
-  
-  .preview-sidebar.collapsed {
-    transform: translateX(-100%);
-    width: 260px;
-  }
-  
   .preview-content {
     flex-direction: column;
   }
@@ -1104,6 +1514,23 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 @media (max-width: 768px) {
+  .preview-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 100;
+    box-shadow: var(--shadow-xl);
+  }
+
+  .preview-sidebar.collapsed {
+    width: 48px;
+  }
+
+  .preview-main {
+    padding-left: 48px;
+  }
+
   .preview-header {
     flex-wrap: wrap;
     padding: 12px 16px;

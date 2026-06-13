@@ -1,6 +1,6 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat, MarkdownVariant, PopoStatus } from '@/types/file'
+import type { FileItem, ExportFormat, MarkdownVariant, PopoStatus, SourceMap } from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -105,6 +105,14 @@ export const filesApi = {
   },
 
   /**
+   * 获取 PDF 溯源信息
+   */
+  getSourceMap(fileId: string) {
+    return api.get<SourceMap>(`/files/${fileId}/source_map`)
+      .then(res => res.data)
+  },
+
+  /**
    * 导出文件
    */
   exportFile(fileId: string, format: ExportFormat) {
@@ -119,5 +127,12 @@ export const filesApi = {
   getDownloadUrl(fileId: string) {
     return api.get<DownloadUrlResponse>(`/files/${fileId}/download_url`)
       .then(res => res.data)
+  },
+
+  /**
+   * 获取同源预览地址
+   */
+  getContentUrl(fileId: string) {
+    return `/api/files/${fileId}/content`
   }
 }

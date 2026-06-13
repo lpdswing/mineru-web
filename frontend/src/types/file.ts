@@ -41,6 +41,25 @@ export interface PopoStatus {
   message?: string
 }
 
+export interface SourceBlock {
+  id: string
+  type: string
+  text: string
+  bbox: [number, number, number, number]
+}
+
+export interface SourcePage {
+  page: number
+  page_idx: number
+  width: number | null
+  height: number | null
+  blocks: SourceBlock[]
+}
+
+export interface SourceMap {
+  pages: SourcePage[]
+}
+
 // 导出格式显示名称
 export const ExportFormatNames: Record<ExportFormat, string> = {
   [ExportFormats.MARKDOWN]: 'Markdown',
