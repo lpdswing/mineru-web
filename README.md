@@ -1,37 +1,40 @@
 # MinerU Web
 
-MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文件上传、异步解析、原文件预览、Markdown 预览、PDF 溯源阅读、Popo 增强结果对照和 Markdown 导出能力。当前版本适配 MinerU 3.2.3，业务后端通过官方 MinerU HTTP 服务解析文件，不再直接依赖 MinerU 内部 Python API。
+Language: English | [中文](README.zh-CN.md)
 
-当前发布版本：`v3.2.3`。
+MinerU Web is a web application for document parsing and result review. It provides file upload, asynchronous parsing, original file preview, Markdown preview, PDF source tracing, Popo-enhanced result comparison, and Markdown export. The current version targets MinerU 3.2.3. The business backend now calls the official MinerU HTTP service instead of depending on MinerU internal Python APIs.
 
-## 特性
+Current release: `v3.2.3`.
 
-- FastAPI + Vue 3 前后端分离
-- 邮箱/密码登录，文件、统计和设置按用户隔离
-- Redis 队列异步解析
-- Worker 并发可配置，支持按 MinerU API 承载能力调整解析吞吐
-- MinIO/S3 存储原文件、Markdown 和图片资源
-- 解析服务健康状态检测，设置页展示 MinerU API 连接和版本信息
-- 支持 PDF、Office 文档和常见图片格式上传
-- 原文件预览支持 PDF、Office、图片和文本
-- PDF 左右溯源阅读，支持 bbox 高亮、按块联动、类型筛选和表格对照
-- Markdown 预览支持原始 Markdown、按页 Markdown、Popo 增强 Markdown 和 OCR/Popo 对照
-- 支持单文件导出和批量导出 Markdown、按页 Markdown、Popo Markdown
-- 可选 MinerU-Popo 后处理服务，Popo 失败不影响基础解析结果
-- 支持 MinerU 3.2.3 官方 backend 选项
-- 业务 backend / worker / frontend 可构建多架构镜像
-- Linux 服务器部署使用 `mineru-router`，适合多 GPU 环境统一调度
-- macOS Apple Silicon 可在宿主机启动 MinerU API，Docker 只运行业务服务
+## Features
 
-## 快速开始
+- FastAPI backend and Vue 3 frontend
+- Email/password login with user-scoped files, statistics, and settings
+- Redis-backed asynchronous parsing queue
+- Configurable worker concurrency for matching MinerU API capacity
+- MinIO/S3 storage for source files, Markdown outputs, and images
+- Parse service health checks, with MinerU API connection and version information on the settings page
+- Upload support for PDF, Office documents, and common image formats
+- Original file preview for PDF, Office, images, and text
+- PDF source tracing with bbox highlights, block linking, type filters, and table comparison
+- Markdown preview for raw Markdown, page-based Markdown, Popo-enhanced Markdown, and OCR/Popo comparison
+- MinerU task status and progress visibility on the files page
+- Single-file and batch export for Markdown, page Markdown, and Popo Markdown
+- Optional MinerU-Popo postprocessing; Popo failures do not block the base parsing result
+- Support for official MinerU 3.2.3 backend options
+- Multi-architecture images for the business backend, worker, and frontend
+- Linux server deployment with `mineru-router` for unified multi-GPU scheduling
+- macOS Apple Silicon deployment with MinerU API on the host and business services in Docker
 
-准备环境变量：
+## Quick Start
+
+Create the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，设置一个浏览器和容器都能访问的 MinIO 地址，例如：
+Edit `.env` and set a MinIO endpoint that can be reached by both the browser and containers, for example:
 
 ```bash
 MINIO_ENDPOINT=SERVER_IP:9000
@@ -39,80 +42,83 @@ WORKER_REPLICAS=1
 WORKER_CONCURRENCY=1
 ```
 
-Linux / 服务器部署：
+Linux / server deployment:
 
 ```bash
 docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-macOS Apple Silicon 部署：
+macOS Apple Silicon deployment:
 
 ```bash
 docker compose --env-file .env -f docker-compose.mac.yml up -d --build
 ```
 
-启动后访问：
+After startup, open:
 
-- Web：`http://SERVER_IP:8088`
-- 后端 API：`http://SERVER_IP:8000`
-- MinerU router：`http://SERVER_IP:8002`
-- MinIO 控制台：`http://SERVER_IP:9001`
+- Web: `http://SERVER_IP:8088`
+- Backend API: `http://SERVER_IP:8000`
+- MinerU router: `http://SERVER_IP:8002`
+- MinIO console: `http://SERVER_IP:9001`
 
-首次访问 Web 时注册邮箱账号即可开始使用。
+Register an email account on the first visit to start using the app.
 
-Linux 服务器、macOS Apple Silicon、模型下载、MinerU Router、多 GPU、MinIO 地址和验证命令见：[部署文档](docs/deployment.md)。
+For Linux server deployment, macOS Apple Silicon setup, model downloads, MinerU Router, multi-GPU scheduling, MinIO endpoint configuration, and verification commands, see [Deployment Guide](docs/deployment.md).
 
-## 界面展示
+## Screenshots
 
 <div align="center">
-  <img src="images/home.png" alt="首页" width="800">
-  <p>首页 - 展示系统概览和快速操作</p>
+  <img src="images/home.png" alt="Home" width="800">
+  <p>Home - system overview and quick actions</p>
 
-  <img src="images/files.png" alt="文件管理" width="800">
-  <p>文件管理 - 支持多种文档格式的上传和管理</p>
+  <img src="images/files.png" alt="File management" width="800">
+  <p>Files - upload and manage multiple document formats</p>
 
-  <img src="images/preview.png" alt="文档预览" width="800">
-  <p>文档预览 - 智能解析和展示文档内容</p>
+  <img src="images/files-progress.png" alt="File parsing progress" width="800">
+  <p>Files - MinerU task status, progress, task id, and elapsed time</p>
 
-  <img src="images/pdf-source-preview.png" alt="PDF 溯源阅读" width="800">
-  <p>PDF 溯源阅读 - 左侧原文 bbox 高亮，右侧 Markdown 按页按块联动预览</p>
+  <img src="images/preview.png" alt="Document preview" width="800">
+  <p>Preview - parse and inspect document content</p>
 
-  <img src="images/pdf-table-trace.png" alt="PDF 表格溯源" width="800">
-  <p>表格溯源 - 按类型筛选表格块，并对照 PDF 区域和 Markdown 表格内容</p>
+  <img src="images/pdf-source-preview.png" alt="PDF source tracing" width="800">
+  <p>PDF source tracing - source bbox highlights on the left and page/block-linked Markdown on the right</p>
 
-  <img src="images/setting.png" alt="系统设置" width="800">
-  <p>系统设置 - 后端选择与解析服务状态</p>
+  <img src="images/pdf-table-trace.png" alt="PDF table tracing" width="800">
+  <p>Table tracing - filter table blocks and compare the PDF region with the Markdown table</p>
+
+  <img src="images/setting.png" alt="Settings" width="800">
+  <p>Settings - backend selection and parse service status</p>
 </div>
 
-## 项目结构
+## Project Structure
 
 ```text
 mineru-web/
-├── backend/                  # FastAPI 后端、worker、数据库模型和测试
-├── frontend/                 # Vue 3 前端
+├── backend/                  # FastAPI backend, worker, database models, and tests
+├── frontend/                 # Vue 3 frontend
 ├── docs/
-│   └── deployment.md         # 部署说明
-├── docker-compose.yml        # Linux / 服务器部署
-├── docker-compose.mac.yml    # macOS 宿主机 MinerU API 部署
+│   └── deployment.md         # Deployment guide
+├── docker-compose.yml        # Linux / server deployment
+├── docker-compose.mac.yml    # macOS host MinerU API deployment
 └── README.md
 ```
 
-## 配置
+## Configuration
 
-常用环境变量见 [.env.example](.env.example)，完整说明见：[部署文档](docs/deployment.md#环境变量)。
+Common environment variables are listed in [.env.example](.env.example). Full details are in the [Deployment Guide](docs/deployment.md).
 
-常用项：
+Frequently used options:
 
-- `MINIO_ENDPOINT`：浏览器和容器都能访问的 MinIO 地址。
-- `WORKER_REPLICAS` / `WORKER_CONCURRENCY`：worker 副本数和单 worker 并发数。
-- `MINERU_API_USE_ASYNC_TASKS`：是否使用 MinerU `/tasks` 异步接口。
-- `POPO_ENABLED`：是否启用 MinerU-Popo 后处理。
+- `MINIO_ENDPOINT`: MinIO address reachable by both browser and containers.
+- `WORKER_REPLICAS` / `WORKER_CONCURRENCY`: worker replica count and per-worker concurrency.
+- `MINERU_API_USE_ASYNC_TASKS`: enable the MinerU `/tasks` asynchronous API.
+- `POPO_ENABLED`: enable MinerU-Popo postprocessing.
 
-## 测试
+## Testing
 
-验证命令见：[部署文档](docs/deployment.md#验证命令)。
+Verification commands are listed in the [Deployment Guide](docs/deployment.md).
 
-常用验证：
+Common checks:
 
 ```bash
 cd backend
@@ -124,38 +130,40 @@ cd frontend
 npm run build
 ```
 
-## 版本和发布
+## Versioning And Releases
 
-本项目版本号跟随兼容的 MinerU 版本。当前版本 `v3.2.3` 对应 MinerU `3.2.3`：
+This project version follows the compatible MinerU version. Current version `v3.2.3` corresponds to MinerU `3.2.3`:
 
 - `lpdswing/mineru-web-frontend:v3.2.3`
 - `lpdswing/mineru-web-backend:v3.2.3`
 - `lpdswing/mineru-web-mineru-api:v3.2.3`
 
-发布 GitHub Release 时使用 tag `v3.2.3`。发布后 `.github/workflows/docker-build.yml` 会使用 release tag 构建并推送同名 Docker 镜像。若只发布 mineru-web 补丁且 MinerU 兼容版本不变，版本号可使用 `v3.2.3-web.1` 这类后缀。
+Use tag `v3.2.3` when publishing the GitHub Release. After the release is published, `.github/workflows/docker-build.yml` builds and pushes Docker images with the same release tag. If only MinerU Web changes while the compatible MinerU version stays the same, use a suffix such as `v3.2.3-web.1`.
 
-## 更新日志
+## Changelog
 
 ### 3.2.3 - 2026-06-13
 
-- 适配 MinerU 3.2.3 官方 HTTP API
-- 解析入口切换到 sidecar / router 模式
-- 保留 MinIO/S3 图片与 Markdown 转存能力
-- 业务 backend / worker 移除 MinerU 内部依赖
-- 设置页增加解析服务状态展示
-- backend 类型适配官方 3.2.3 backend 参数
-- 增加邮箱登录和用户级数据隔离
-- 增加 worker 并发配置和多 GPU router 部署说明
-- 增加可选 MinerU-Popo 后处理、预览和导出
-- 增强 PDF 原文溯源预览，支持 bbox 高亮、source map、类型筛选和表格对照
-- 增加 Office、图片和文本原文件预览
-- 增加批量删除和批量导出
+- Adapted to the official MinerU 3.2.3 HTTP API
+- Switched parsing to sidecar / router mode
+- Preserved MinIO/S3 transfer for images and Markdown artifacts
+- Removed MinerU internal dependencies from the business backend and worker
+- Added parse service status to the settings page
+- Added official MinerU 3.2.3 backend parameter support
+- Added email login and user-scoped data isolation
+- Added worker concurrency configuration and multi-GPU router deployment notes
+- Added optional MinerU-Popo postprocessing, preview, and export
+- Enhanced PDF source tracing with bbox highlights, source maps, type filters, and table comparison
+- Added original file preview for Office, image, and text files
+- Added parse progress visibility backed by MinerU task state
+- Added batch delete and batch export
+- Delete now cleans up parsed MinIO artifacts together with the source file
 
-## 开源协议
+## License
 
-本项目采用 AGPL-3.0 协议开源，详情参见 [LICENSE](LICENSE)。
+This project is licensed under AGPL-3.0. See [LICENSE](LICENSE) for details.
 
-## 致谢
+## Acknowledgements
 
 - [MinerU](https://github.com/opendatalab/MinerU)
 - [FastAPI](https://github.com/fastapi/fastapi)
