@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, Enum
+from sqlalchemy import Column, Integer, String, Boolean
 from app.models.base import Base
-from app.models.enums import SettingsBackendType
+from app.models.enums import DEFAULT_MINERU_BACKEND, normalize_backend_value
 
 class Settings(Base):
     __tablename__ = 'settings'
@@ -10,7 +10,7 @@ class Settings(Base):
     force_ocr = Column(Boolean, default=False)
     table_recognition = Column(Boolean, default=False)
     formula_recognition = Column(Boolean, default=False)
-    backend = Column(Enum(SettingsBackendType), default=SettingsBackendType.HYBRID_HTTP_CLIENT)
+    backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
 
     def to_dict(self):
         return {
@@ -19,5 +19,5 @@ class Settings(Base):
             'force_ocr': self.force_ocr,
             'table_recognition': self.table_recognition,
             'formula_recognition': self.formula_recognition,
-            'backend': self.backend.value if self.backend else SettingsBackendType.HYBRID_HTTP_CLIENT.value
+            'backend': normalize_backend_value(self.backend)
         }

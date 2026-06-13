@@ -54,6 +54,9 @@
       <div class="formats-title">支持格式</div>
       <div class="formats-list">
         <span class="format-tag">PDF</span>
+        <span class="format-tag">DOCX</span>
+        <span class="format-tag">PPTX</span>
+        <span class="format-tag">XLSX</span>
         <span class="format-tag">PNG</span>
         <span class="format-tag">JPG</span>
         <span class="format-tag">JPEG</span>
@@ -83,20 +86,20 @@ const statCards = computed(() => [
     icon: FolderOpened,
     label: '文件总数',
     value: totalFiles.value,
-    gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+    gradient: 'var(--primary-gradient)'
   },
   {
     icon: Clock,
     label: '今日上传',
     value: todayUploads.value,
-    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+    gradient: 'linear-gradient(180deg, var(--success-color) 0%, var(--success-dark) 100%)'
   },
   {
     icon: DataLine,
     label: '已用空间',
     value: usedSpace.value,
     unit: 'MB',
-    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+    gradient: 'linear-gradient(180deg, var(--warning-color) 0%, var(--warning-dark) 100%)'
   }
 ])
 
@@ -128,7 +131,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  background: rgb(99 102 241 / 0.1);
+  background: var(--primary-tint);
   border-radius: 20px;
   font-size: 12px;
   color: var(--primary-color);
@@ -239,7 +242,7 @@ onMounted(() => {
 
 .action-card:hover {
   border-color: var(--primary-light);
-  background: rgb(99 102 241 / 0.04);
+  background: var(--primary-faint);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -260,7 +263,7 @@ onMounted(() => {
 }
 
 .action-icon.success {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(180deg, var(--success-color) 0%, var(--success-dark) 100%);
 }
 
 .action-text {

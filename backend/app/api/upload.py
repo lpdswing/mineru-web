@@ -7,9 +7,8 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.file import File as FileModel
-from app.models.enums import FileStatus, BackendType as FileBackendType
+from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
 from app.models.settings import Settings
-from app.models.enums import SettingsBackendType
 from app.utils.minio_client import upload_file
 from app.utils.user_dep import get_user_id
 from app.services.parser import ParserService
@@ -39,9 +38,9 @@ async def upload_files(
 
             # 获取用户设置并转换后端类型
             settings = db.query(Settings).filter(Settings.user_id == user_id).first()
-            backend = FileBackendType.PIPELINE
+            backend = DEFAULT_MINERU_BACKEND
             if settings and settings.backend:
-                backend = settings.backend.to_file_backend()
+                backend = normalize_backend_value(settings.backend)
 
             # 保存到数据库
             db_file = FileModel(
@@ -72,4 +71,4 @@ async def upload_files(
     return {
         "total": len(results),
         "files": results
-    } 
+    }

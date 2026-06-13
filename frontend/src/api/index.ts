@@ -1,21 +1,17 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
-import { getUserId } from '@/utils/user'
 
 // 创建 axios 实例
 const api: AxiosInstance = axios.create({
   baseURL: '/api',
   timeout: 30000, // 30秒超时（考虑到文件解析可能需要较长时间）
+  withCredentials: true,
 })
 
-// 请求拦截器：自动添加用户ID
+// 请求拦截器
 api.interceptors.request.use(
   (config) => {
-    // 自动添加用户ID到请求头
-    if (!config.headers['X-User-Id']) {
-      config.headers['X-User-Id'] = getUserId()
-    }
     return config
   },
   (error) => {
@@ -32,7 +28,18 @@ api.interceptors.response.use(
   (error: AxiosError<any>) => {
     // 统一错误处理
     const errorMessage = getErrorMessage(error)
-    ElMessage.error(errorMessage)
+    const status = error.response?.status
+    const requestUrl = error.config?.url || ''
+    const isCurrentUserProbe = status === 401 && requestUrl.includes('/auth/me')
+
+    if (!isCurrentUserProbe) {
+      ElMessage.error(errorMessage)
+    }
+
+    if (status === 401 && !isCurrentUserProbe && window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+
     return Promise.reject(error)
   }
 )

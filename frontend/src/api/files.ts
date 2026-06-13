@@ -1,6 +1,6 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat } from '@/types/file'
+import type { FileItem, ExportFormat, MarkdownVariant, PopoStatus, SourceMap } from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -18,12 +18,14 @@ export interface FileListResponse {
 
 export interface UploadResponse {
   total: number
-  success: number
-  failed: number
+  success?: number
+  failed?: number
   files: Array<{
+    id?: string
     filename: string
     status: string
     file_id?: string
+    error_message?: string | null
   }>
 }
 
@@ -87,8 +89,26 @@ export const filesApi = {
   /**
    * 获取已解析内容
    */
-  getParsedContent(fileId: string) {
-    return api.get(`/files/${fileId}/parsed_content`)
+  getParsedContent(fileId: string, variant: MarkdownVariant = 'markdown') {
+    return api.get<string>(`/files/${fileId}/parsed_content`, {
+      params: { variant }
+    })
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取 Popo 处理状态
+   */
+  getPopoStatus(fileId: string) {
+    return api.get<PopoStatus>(`/files/${fileId}/popo/status`)
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取 PDF 溯源信息
+   */
+  getSourceMap(fileId: string) {
+    return api.get<SourceMap>(`/files/${fileId}/source_map`)
       .then(res => res.data)
   },
 
@@ -107,5 +127,12 @@ export const filesApi = {
   getDownloadUrl(fileId: string) {
     return api.get<DownloadUrlResponse>(`/files/${fileId}/download_url`)
       .then(res => res.data)
+  },
+
+  /**
+   * 获取同源预览地址
+   */
+  getContentUrl(fileId: string) {
+    return `/api/files/${fileId}/content`
   }
 }

@@ -1,4 +1,4 @@
-FROM vllm/vllm-openai:v0.10.1.1
+FROM python:3.12-slim
 
 # Install libgl for opencv support & Noto fonts for Chinese characters
 RUN apt-get update && \
@@ -6,7 +6,8 @@ RUN apt-get update && \
         fonts-noto-core \
         fonts-noto-cjk \
         fontconfig \
-        libgl1 && \
+        libgl1 \
+        libglib2.0-0 && \
     fc-cache -fv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -17,11 +18,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # 安装 Python 依赖
-RUN python3 -m pip install -U -r requirements.txt --break-system-packages && python3 -m pip cache purge
-
-# Download models and update the configuration file
-# 模型文件外部挂载
-# RUN /bin/bash -c "mineru-models-download -s modelscope -m all"
+RUN python3 -m pip install -U -r requirements.txt && python3 -m pip cache purge
 
 # 复制应用代码和启动脚本
 COPY . .

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { HomeFilled, Upload, Document, Setting } from '@element-plus/icons-vue'
+import { HomeFilled, Upload, Document, Setting, SwitchButton, User } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ref, computed } from 'vue'
+import { logoutUser, useCurrentUser } from '@/utils/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,12 +20,23 @@ const activeMenu = computed(() => {
 })
 
 const isSettingsPage = computed(() => route.path === '/settings')
+const isAuthPage = computed(() => route.meta.public === true)
+const currentUser = useCurrentUser()
 
 const sidebarHover = ref(false)
+
+const handleLogout = async () => {
+  try {
+    await logoutUser()
+  } finally {
+    router.push('/login')
+  }
+}
 </script>
 
 <template>
-  <div class="mineru-layout">
+  <router-view v-if="isAuthPage" />
+  <div v-else class="mineru-layout">
     <!-- 侧边栏 -->
     <aside 
       class="sidebar" 
@@ -60,6 +72,15 @@ const sidebarHover = ref(false)
       </nav>
       
       <div class="sidebar-bottom">
+        <div class="user-item">
+          <div class="nav-icon-wrapper">
+            <el-icon :size="20"><User /></el-icon>
+          </div>
+          <transition name="fade">
+            <span v-show="sidebarHover" class="user-email">{{ currentUser?.email }}</span>
+          </transition>
+        </div>
+
         <div 
           class="nav-item settings-item" 
           :class="{ active: isSettingsPage }" 
@@ -84,11 +105,20 @@ const sidebarHover = ref(false)
             <span v-show="sidebarHover" class="nav-label">GitHub</span>
           </transition>
         </a>
+
+        <div class="nav-item logout-item" @click="handleLogout">
+          <div class="nav-icon-wrapper">
+            <el-icon :size="20"><SwitchButton /></el-icon>
+          </div>
+          <transition name="fade">
+            <span v-show="sidebarHover" class="nav-label">退出</span>
+          </transition>
+        </div>
         
         <div class="version-badge">
           <span class="version-dot"></span>
           <transition name="fade">
-            <span v-show="sidebarHover" class="version-text">v2.7.1</span>
+            <span v-show="sidebarHover" class="version-text">v3.2.3</span>
           </transition>
         </div>
       </div>
@@ -198,7 +228,7 @@ const sidebarHover = ref(false)
 }
 
 .nav-item.active {
-  background: rgb(99 102 241 / 0.1);
+  background: var(--primary-tint);
   color: var(--primary-color);
 }
 
@@ -242,6 +272,25 @@ const sidebarHover = ref(false)
   margin-bottom: 4px;
 }
 
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+.user-email {
+  min-width: 0;
+  max-width: 104px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .github-link {
   display: flex;
   align-items: center;
@@ -264,6 +313,14 @@ const sidebarHover = ref(false)
 
 .github-link:hover img {
   opacity: 1;
+}
+
+.logout-item {
+  color: var(--text-muted);
+}
+
+.logout-item:hover {
+  color: var(--danger-color);
 }
 
 .version-badge {

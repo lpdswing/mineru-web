@@ -1,4 +1,8 @@
+import mimetypes
+from urllib.parse import quote
+
 from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -57,6 +61,49 @@ def file_download_url(
     url = get_file_url(file.minio_path)
     return {"url": url}
 
+
+@router.get("/files/{file_id}/content")
+def file_content(
+    file_id: int,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    file = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    try:
+        response = minio_client.get_object(MINIO_BUCKET, file.minio_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取文件失败: {str(e)}")
+
+    def iter_file():
+        try:
+            stream = getattr(response, "stream", None)
+            if stream:
+                yield from stream(32 * 1024)
+            else:
+                yield response.read()
+        finally:
+            close = getattr(response, "close", None)
+            if close:
+                close()
+            release_conn = getattr(response, "release_conn", None)
+            if release_conn:
+                release_conn()
+
+    content_type = (
+        getattr(response, "headers", {}).get("Content-Type")
+        or mimetypes.guess_type(file.filename)[0]
+        or "application/octet-stream"
+    )
+    encoded_filename = quote(file.filename)
+    return StreamingResponse(
+        iter_file(),
+        media_type=content_type,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
+    )
+
 @router.delete("/files/{file_id}")
 def delete_file(
     file_id: int,
@@ -84,4 +131,4 @@ def delete_file(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
-    return {"msg": "删除成功"} 
+    return {"msg": "删除成功"}

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 # dist
+frontend/dist/
 dist-ssr
 *.local
 
@@ -58,3 +59,6 @@ magic-pdf.json
 mineru.json
 models2.0/
 output/
+graphify-out/
+.codex/
+.superpowers/

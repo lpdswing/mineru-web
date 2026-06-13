@@ -27,13 +27,13 @@
                 <div class="switch-wrapper">
                   <el-switch
                     v-model="settings.forceOcr"
-                    :disabled="settings.backend !== 'pipeline'"
+                    :disabled="!supportsParseMethod"
                   />
                   <span class="switch-label">{{ settings.forceOcr ? '已开启' : '已关闭' }}</span>
                 </div>
-                <div v-if="settings.backend !== 'pipeline'" class="form-tip">
+                <div v-if="!supportsParseMethod" class="form-tip">
                   <el-icon><InfoFilled /></el-icon>
-                  <span>仅 Pipeline 模式支持此选项</span>
+                  <span>仅 Pipeline / Hybrid 模式支持此选项</span>
                 </div>
               </el-form-item>
 
@@ -93,19 +93,62 @@
             <el-form-item label="选择引擎">
               <el-select v-model="settings.backend" class="full-width">
                 <el-option label="Pipeline" value="pipeline" />
+                <el-option label="VLM Auto Engine" value="vlm-auto-engine" />
                 <el-option label="VLM HTTP Client" value="vlm-http-client" />
+                <el-option label="Hybrid Auto Engine" value="hybrid-auto-engine" />
                 <el-option label="Hybrid HTTP Client" value="hybrid-http-client" />
               </el-select>
             </el-form-item>
           </div>
 
+          <div class="form-section">
+            <div class="section-title">
+              <el-icon><Connection /></el-icon>
+              <span>解析服务状态</span>
+              <el-button
+                class="section-action"
+                type="primary"
+                link
+                :loading="healthLoading"
+                @click="loadMineruHealth"
+              >
+                刷新
+              </el-button>
+            </div>
+
+            <div v-if="healthLoading && !mineruHealth" class="loading-state">
+              <el-icon class="is-loading"><RefreshRight /></el-icon>
+              <span>正在检查解析服务...</span>
+            </div>
+            <div v-else-if="mineruHealth" class="health-grid">
+              <div class="health-row">
+                <span class="health-label">服务地址</span>
+                <span class="health-value">{{ mineruHealth.base_url || '-' }}</span>
+              </div>
+              <div class="health-row">
+                <span class="health-label">状态</span>
+                <el-tag :type="mineruHealth.available ? 'success' : 'danger'">
+                  {{ mineruHealth.available ? '可用' : '不可用' }}
+                </el-tag>
+              </div>
+              <div v-if="mineruHealth.version" class="health-row">
+                <span class="health-label">MinerU 版本</span>
+                <span class="health-value">{{ mineruHealth.version }}</span>
+              </div>
+              <div v-if="mineruHealth.error" class="health-row">
+                <span class="health-label">错误</span>
+                <span class="health-value error">{{ mineruHealth.error }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 操作按钮 -->
           <div class="form-actions">
-            <el-button @click="resetSettings" size="large">
+            <el-button @click="resetSettings" size="large" :disabled="savingSettings">
               <el-icon><RefreshRight /></el-icon>
               <span>重置</span>
             </el-button>
-            <el-button type="primary" @click="saveSettings" size="large">
+            <el-button type="primary" @click="saveSettings" size="large" :loading="savingSettings">
               <el-icon><Check /></el-icon>
               <span>保存设置</span>
             </el-button>
@@ -117,11 +160,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check } from '@element-plus/icons-vue'
+import { Setting, View, Document, Cpu, InfoFilled, RefreshRight, Check, Connection } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
-import { getUserId } from '@/utils/user'
+import type { MineruBackend, MineruHealthResponse } from '@/api/settings'
 
 interface Settings {
   forceOcr: boolean
@@ -129,7 +172,7 @@ interface Settings {
   formulaRecognition: boolean
   tableRecognition: boolean
   version: string
-  backend: 'pipeline' | 'vlm-http-client' | 'hybrid-http-client'
+  backend: MineruBackend
 }
 
 const defaultSettings: Settings = {
@@ -138,10 +181,16 @@ const defaultSettings: Settings = {
   formulaRecognition: true,
   tableRecognition: true,
   version: '',
-  backend: 'hybrid-http-client'
+  backend: 'pipeline'
 }
 
 const settings = ref<Settings>({ ...defaultSettings })
+const mineruHealth = ref<MineruHealthResponse | null>(null)
+const savingSettings = ref(false)
+const healthLoading = ref(false)
+const supportsParseMethod = computed(() => {
+  return settings.value.backend === 'pipeline' || settings.value.backend.startsWith('hybrid-')
+})
 
 const loadSettings = async () => {
   try {
@@ -154,10 +203,13 @@ const loadSettings = async () => {
       version: data.version || '',
       backend: data.backend || 'pipeline'
     }
-  } catch (error) {}
+  } catch (error) {
+    ElMessage.error('加载设置失败')
+  }
 }
 
 const saveSettings = async () => {
+  savingSettings.value = true
   try {
     await settingsApi.updateSettings({
       force_ocr: settings.value.forceOcr,
@@ -165,11 +217,14 @@ const saveSettings = async () => {
       formula_recognition: settings.value.formulaRecognition,
       table_recognition: settings.value.tableRecognition,
       version: settings.value.version,
-      backend: settings.value.backend,
-      user_id: getUserId()
+      backend: settings.value.backend
     })
     ElMessage.success('设置已保存')
-  } catch (error) {}
+  } catch (error) {
+    ElMessage.error('保存设置失败')
+  } finally {
+    savingSettings.value = false
+  }
 }
 
 const resetSettings = () => {
@@ -177,8 +232,24 @@ const resetSettings = () => {
   ElMessage.info('设置已重置')
 }
 
+const loadMineruHealth = async () => {
+  healthLoading.value = true
+  try {
+    mineruHealth.value = await settingsApi.getMineruHealth()
+  } catch (error) {
+    mineruHealth.value = {
+      available: false,
+      base_url: '',
+      error: '无法获取 MinerU API 状态'
+    }
+  } finally {
+    healthLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings()
+  loadMineruHealth()
 })
 </script>
 
@@ -266,6 +337,10 @@ onMounted(() => {
   border-bottom: 1px solid var(--border-light);
 }
 
+.section-action {
+  margin-left: auto;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -305,6 +380,44 @@ onMounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  min-height: 28px;
+}
+
+.health-grid {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.health-label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.health-value {
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.health-value.error {
+  color: var(--danger-color);
 }
 
 .form-actions {

@@ -11,16 +11,18 @@
           <el-button 
             type="danger" 
             @click="handleBatchDelete" 
-            :disabled="!multipleSelection.length"
+            :loading="batchDeleting"
+            :disabled="!multipleSelection.length || batchExporting"
           >
             <el-icon><Delete /></el-icon>
             <span>批量删除</span>
             <span v-if="multipleSelection.length" class="action-count">({{ multipleSelection.length }})</span>
           </el-button>
-          <el-dropdown @command="handleBatchExport" :disabled="!multipleSelection.length">
-            <el-button type="default" :loading="batchExporting">
+          <el-dropdown @command="handleBatchExport" :disabled="selectedExportableFiles.length === 0 || batchDeleting">
+            <el-button type="default" :loading="batchExporting" :disabled="selectedExportableFiles.length === 0 || batchDeleting">
               <el-icon><Download /></el-icon>
               <span>批量导出</span>
+              <span v-if="selectedExportableFiles.length" class="action-count">({{ selectedExportableFiles.length }})</span>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -44,13 +46,12 @@
           placeholder="搜索文件名..."
           class="search-input"
           clearable
-          @input="onParamChange"
         >
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        <el-select v-model="params.status" placeholder="全部状态" class="status-select" clearable @change="onParamChange">
+        <el-select v-model="params.status" placeholder="全部状态" class="status-select" clearable>
           <el-option label="全部状态" value="" />
           <el-option label="等待解析" value="pending" />
           <el-option label="解析中" value="parsing" />
@@ -101,7 +102,14 @@
             <template #default="{ row }">
               <div class="status-cell">
                 <span class="status-dot" :class="getStatusClass(row.status)"></span>
-                <span>{{ getStatusText(row.status) }}</span>
+                <el-tooltip
+                  v-if="row.status === 'parse_failed' && row.error_message"
+                  :content="row.error_message"
+                  placement="top"
+                >
+                  <span class="status-error-text">{{ getStatusText(row.status) }}</span>
+                </el-tooltip>
+                <span v-else>{{ getStatusText(row.status) }}</span>
               </div>
             </template>
           </el-table-column>
@@ -117,8 +125,8 @@
                   @click="parseFile(row)"
                   :disabled="row.status === 'parsed' || row.status === 'parsing'"
                 >解析</el-button>
-                <el-dropdown @command="(fmt: string) => handleExport(row, fmt as ExportFormat)">
-                  <el-button class="action-link" link :loading="exportingId === row.id">
+                <el-dropdown @command="(fmt: string) => handleExport(row, fmt as ExportFormat)" :disabled="row.status !== 'parsed'">
+                  <el-button class="action-link" link :loading="exportingId === row.id" :disabled="row.status !== 'parsed'">
                     导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                   </el-button>
                   <template #dropdown>
@@ -136,11 +144,12 @@
 
         <!-- 空状态 -->
         <div v-else-if="!loading" class="empty-state">
-          <el-empty description="暂无文件">
+          <el-empty :description="emptyDescription">
             <el-button type="primary" @click="$router.push('/upload')">
               <el-icon><Upload /></el-icon>
               上传文件
             </el-button>
+            <el-button v-if="listLoadError" @click="fetchFiles">重试</el-button>
           </el-empty>
         </div>
 
@@ -156,8 +165,6 @@
           :total="total"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @size-change="onParamChange"
-          @current-change="onParamChange"
         />
       </div>
     </div>
@@ -185,8 +192,11 @@ import { ExportFormatNames } from '@/types/file'
 const files = ref<FileItem[]>([])
 const total = ref(0)
 const loading = ref(false)
+const listLoadError = ref(false)
 const pollingTimer = ref<number | null>(null)
+const searchTimer = ref<number | null>(null)
 const POLLING_INTERVAL = 3000
+const SEARCH_DEBOUNCE_MS = 300
 
 const params = reactive({
   page: 1,
@@ -197,10 +207,17 @@ const params = reactive({
 
 const exportingId = ref<string>('')
 const batchExporting = ref(false)
+const batchDeleting = ref(false)
 const multipleSelection = ref<FileItem[]>([])
 const router = useRouter()
 
 const hasParsingFiles = computed(() => files.value.some(f => f.status === 'parsing'))
+const selectedExportableFiles = computed(() => multipleSelection.value.filter(file => file.status === 'parsed'))
+const emptyDescription = computed(() => {
+  if (listLoadError.value) return '文件列表加载失败'
+  if (params.search || params.status) return '没有匹配的文件'
+  return '暂无文件'
+})
 
 const getStatusClass = (status: string) => {
   const map: Record<string, string> = {
@@ -222,11 +239,16 @@ const openPreview = (file: FileItem) => {
 
 const handleExport = async (file: FileItem, format: ExportFormat) => {
   if (!file || exportingId.value === file.id) return
+  if (file.status !== 'parsed') {
+    ElMessage.warning('解析完成后才能导出')
+    return
+  }
   exportingId.value = file.id
   try {
     const result = await filesApi.exportFile(file.id, format)
     if (result.status === 'success') {
       const response = await fetch(result.download_url)
+      if (!response.ok) throw new Error('download failed')
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -238,6 +260,8 @@ const handleExport = async (file: FileItem, format: ExportFormat) => {
       document.body.removeChild(link)
       ElMessage.success(`导出${ExportFormatNames[format]}成功`)
     }
+  } catch (e) {
+    ElMessage.error(`导出${ExportFormatNames[format]}失败`)
   } finally {
     exportingId.value = ''
   }
@@ -250,17 +274,21 @@ const stopPolling = () => {
   }
 }
 
+const clearSearchTimer = () => {
+  if (searchTimer.value) {
+    clearTimeout(searchTimer.value)
+    searchTimer.value = null
+  }
+}
+
 const updateFiles = (newFiles: FileItem[]) => {
-  if (files.value.length !== newFiles.length) {
+  const shouldReplaceList = files.value.length !== newFiles.length
+    || files.value.some((oldFile, index) => oldFile.id !== newFiles[index]?.id)
+  if (shouldReplaceList) {
     files.value = newFiles
     return
   }
-  newFiles.forEach((newFile, index) => {
-    const oldFile = files.value[index]
-    if (oldFile.id === newFile.id && oldFile.status !== newFile.status) {
-      files.value[index] = newFile
-    }
-  })
+  files.value = newFiles
 }
 
 const startPolling = () => {
@@ -294,9 +322,11 @@ const fetchFiles = async () => {
     })
     files.value = result.files
     total.value = result.total
+    listLoadError.value = false
   } catch (e) {
     files.value = []
     total.value = 0
+    listLoadError.value = true
   } finally {
     loading.value = false
   }
@@ -329,17 +359,19 @@ const downloadFile = async (file: FileItem) => {
     link.click()
     window.URL.revokeObjectURL(url)
     document.body.removeChild(link)
-  } catch (e) {}
+  } catch (e) {
+    ElMessage.error('下载文件失败')
+  }
 }
 
 const handleBatchDelete = async () => {
-  if (!multipleSelection.value.length || batchExporting.value) return
+  if (!multipleSelection.value.length || batchDeleting.value || batchExporting.value) return
   ElMessageBox.confirm(
     `确定要删除选中的 ${multipleSelection.value.length} 个文件吗？`,
     '批量删除确认',
     { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
   ).then(async () => {
-    batchExporting.value = true
+    batchDeleting.value = true
     const failedFiles: string[] = []
     try {
       const deletePromises = multipleSelection.value.map(async (file) => {
@@ -359,25 +391,39 @@ const handleBatchDelete = async () => {
       }
       fetchFiles()
     } finally {
-      batchExporting.value = false
+      batchDeleting.value = false
     }
   }).catch(() => {})
 }
 
 const handleBatchExport = async (format: ExportFormat) => {
-  if (!multipleSelection.value.length || batchExporting.value) return
+  const exportableFiles = selectedExportableFiles.value
+  if (!exportableFiles.length || batchExporting.value || batchDeleting.value) {
+    ElMessage.warning('请选择已完成解析的文件')
+    return
+  }
   batchExporting.value = true
+  let successCount = 0
+  const failedFiles: string[] = []
   try {
     const zip = new JSZip()
-    for (const file of multipleSelection.value) {
+    for (const file of exportableFiles) {
       try {
         const result = await filesApi.exportFile(file.id, format)
         if (result.status === 'success') {
           const response = await fetch(result.download_url)
+          if (!response.ok) throw new Error('download failed')
           const content = await response.blob()
           zip.file(result.filename, content)
+          successCount += 1
         }
-      } catch (e) {}
+      } catch (e) {
+        failedFiles.push(file.filename)
+      }
+    }
+    if (successCount === 0) {
+      ElMessage.error('批量导出失败')
+      return
     }
     const zipBlob = await zip.generateAsync({ type: 'blob' })
     const url = window.URL.createObjectURL(zipBlob)
@@ -388,7 +434,12 @@ const handleBatchExport = async (format: ExportFormat) => {
     link.click()
     window.URL.revokeObjectURL(url)
     document.body.removeChild(link)
-    ElMessage.success(`批量导出${ExportFormatNames[format]}完成`)
+    if (failedFiles.length > 0 || exportableFiles.length < multipleSelection.value.length) {
+      const skippedCount = multipleSelection.value.length - exportableFiles.length
+      ElMessage.warning(`成功导出 ${successCount} 个文件，${failedFiles.length + skippedCount} 个文件未导出`)
+    } else {
+      ElMessage.success(`批量导出${ExportFormatNames[format]}完成`)
+    }
   } finally {
     batchExporting.value = false
   }
@@ -409,13 +460,15 @@ const parseFile = async (file: FileItem) => {
   } catch (e) {}
 }
 
-const onParamChange = () => {
-  fetchFiles()
-}
-
-const handleSearch = () => {
-  params.page = 1
-  fetchFiles()
+const scheduleSearch = () => {
+  clearSearchTimer()
+  searchTimer.value = window.setTimeout(() => {
+    if (params.page !== 1) {
+      params.page = 1
+      return
+    }
+    fetchFiles()
+  }, SEARCH_DEBOUNCE_MS)
 }
 
 onMounted(() => {
@@ -426,10 +479,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling()
+  clearSearchTimer()
 })
 
 watch([() => params.search, () => params.status], () => {
-  handleSearch()
+  scheduleSearch()
 })
 
 watch([() => params.page, () => params.pageSize], () => {

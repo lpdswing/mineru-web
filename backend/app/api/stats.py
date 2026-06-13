@@ -13,5 +13,5 @@ def get_stats(
 ):
     """获取统计数据"""
     stats_service = StatsService(db)
-    result = stats_service.get_stats()
+    result = stats_service.get_stats(user_id)
     return result 
