@@ -145,6 +145,37 @@ def _join_source_text(parts: list[str]) -> str:
     return " ".join(unique_parts).strip()
 
 
+def _source_text_signature(text: str) -> str:
+    return re.sub(r"[^\w]+", "", text, flags=re.UNICODE).lower()
+
+
+def _merge_duplicate_source_block(
+    blocks: list[dict[str, Any]],
+    bbox: list[int | float],
+    block_type: str,
+    text: str,
+) -> bool:
+    text_signature = _source_text_signature(text)
+    if not text_signature:
+        return False
+
+    for block in blocks:
+        if block.get("type") != block_type or block.get("bbox") != bbox:
+            continue
+
+        existing_text = str(block.get("text") or "")
+        existing_signature = _source_text_signature(existing_text)
+        if not existing_signature:
+            continue
+        if text_signature not in existing_signature and existing_signature not in text_signature:
+            continue
+
+        if len(text_signature) > len(existing_signature):
+            block["text"] = text
+        return True
+    return False
+
+
 def _extract_text(value: Any) -> str:
     if isinstance(value, str):
         return _clean_source_text(value)
@@ -217,6 +248,8 @@ def _collect_source_blocks(value: Any, page_number: int, blocks: list[dict[str, 
     block_type = _extract_block_type(value)
     if bbox and text:
         bounded_text = text[:1200]
+        if _merge_duplicate_source_block(blocks, bbox, block_type, bounded_text):
+            return
         key = (tuple(bbox), bounded_text, block_type)
         if key not in seen:
             seen.add(key)

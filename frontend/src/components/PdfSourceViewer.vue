@@ -66,6 +66,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist/types/src/display/api'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import type { SourceBlock, SourceMap, SourcePage } from '@/types/file'
+import { sourceTypeLabel } from '@/utils/sourceTypes'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?module=1`
 
@@ -263,7 +264,7 @@ const blockStyle = (block: SourceBlock, page: PageGeometry) => {
 
 const blockTitle = (block: SourceBlock) => {
   const text = block.text.length > 80 ? `${block.text.slice(0, 80)}...` : block.text
-  return `${block.type}: ${text}`
+  return `${sourceTypeLabel(block.type)}: ${text}`
 }
 
 const scrollToPage = async (pageNumber: number) => {

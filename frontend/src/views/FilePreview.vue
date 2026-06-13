@@ -133,7 +133,7 @@
                   v-if="fileUrl"
                   ref="pdfViewerRef"
                   :url="fileUrl"
-                  :source-map="sourceMap"
+                  :source-map="filteredSourceMap"
                   :active-page="activeSourcePage"
                   :active-block-id="activeSourceBlockId"
                   @page-change="handlePdfPageChange"
@@ -189,6 +189,19 @@
                   {{ name }}
                 </button>
                 <span v-if="markdownVariant !== 'compare'" class="source-trace-chip">{{ sourceTraceLabel }}</span>
+              </div>
+              <div v-if="markdownVariant !== 'compare' && sourceBlockTotal" class="source-type-filters">
+                <button
+                  v-for="option in sourceTypeFilterOptions"
+                  :key="option.key"
+                  class="source-type-filter"
+                  :class="{ active: activeSourceTypeFilter === option.key }"
+                  type="button"
+                  @click="setSourceTypeFilter(option.key)"
+                >
+                  <span>{{ option.label }}</span>
+                  <small>{{ sourceTypeFilterCount(option.key) }}</small>
+                </button>
               </div>
             </div>
             <div v-else class="markdown-toolbar">
@@ -277,11 +290,16 @@
                     @keydown.space.prevent="handleMarkdownBlockClick(section, trace)"
                   >
                     <div class="markdown-content trace-content" v-html="trace.html"></div>
-                    <span v-if="trace.block.type !== 'page_number'" class="reader-source-pill">
-                      P{{ section.page }} · {{ trace.block.type }}
+                    <span
+                      v-if="trace.block.type !== 'page_number'"
+                      class="reader-source-pill"
+                      :class="`type-${sourceTypeFilterFor(trace.block.type)}`"
+                    >
+                      P{{ section.page }} · {{ sourceTypeLabel(trace.block.type) }}
                     </span>
                   </article>
                 </div>
+                <div v-else-if="isSourceTypeFilterActive" class="markdown-filter-empty">当前类型无内容</div>
                 <div v-else class="markdown-content page-content" v-html="section.html"></div>
               </section>
             </div>
@@ -319,6 +337,19 @@ import {
   type SourceBlock,
   type SourceMap
 } from '@/types/file'
+import {
+  SOURCE_TYPE_FILTER_OPTIONS,
+  sourceTypeFilterFor,
+  sourceTypeFilterMatches,
+  sourceTypeLabel,
+  type SourceTypeFilter
+} from '@/utils/sourceTypes'
+import {
+  normalizeTraceText,
+  shouldRenderTraceExcerpt,
+  splitMarkdownChunks,
+  traceExcerptForBlock
+} from '@/utils/markdownTrace'
 
 const route = useRoute()
 const md = MarkdownIt({ html: true, linkify: true, typographer: true }).use(mk)
@@ -368,6 +399,8 @@ const pdfViewerRef = ref<PdfSourceViewerRef | null>(null)
 const markdownScrollRef = ref<HTMLElement | null>(null)
 const sourceMap = ref<SourceMap>({ pages: [] })
 const sourceMapLoading = ref(false)
+const sourceTypeFilterOptions = SOURCE_TYPE_FILTER_OPTIONS
+const activeSourceTypeFilter = ref<SourceTypeFilter>('all')
 const activeSourcePage = ref(1)
 const activeSourceBlockId = ref('')
 const currentPdfPage = ref(1)
@@ -461,6 +494,7 @@ const selectFile = (file: FileItem) => {
   loading.value = false
   hasMore.value = true
   sourceMap.value = { pages: [] }
+  activeSourceTypeFilter.value = 'all'
   activeSourcePage.value = 1
   activeSourceBlockId.value = ''
   currentPdfPage.value = 1
@@ -524,17 +558,77 @@ const comparePopoStatusLabel = computed(() => {
 const sourceBlockTotal = computed(() => {
   return sourceMap.value.pages.reduce((total, item) => total + item.blocks.length, 0)
 })
+const isSourceTypeFilterActive = computed(() => activeSourceTypeFilter.value !== 'all')
+const filterSourceBlocks = (blocks: SourceBlock[]) => {
+  return blocks.filter((block) => sourceTypeFilterMatches(block.type, activeSourceTypeFilter.value))
+}
+const filteredSourceMap = computed<SourceMap>(() => {
+  if (!isSourceTypeFilterActive.value) return sourceMap.value
+  return {
+    pages: sourceMap.value.pages.map((pageItem) => ({
+      ...pageItem,
+      blocks: filterSourceBlocks(pageItem.blocks)
+    }))
+  }
+})
+const filteredSourceBlockTotal = computed(() => {
+  return filteredSourceMap.value.pages.reduce((total, item) => total + item.blocks.length, 0)
+})
 const sourceTraceLabel = computed(() => {
   if (sourceMapLoading.value) return '溯源加载中'
+  if (sourceBlockTotal.value && isSourceTypeFilterActive.value) {
+    return `${filteredSourceBlockTotal.value} / ${sourceBlockTotal.value} 个 bbox`
+  }
   if (sourceBlockTotal.value) return `${sourceBlockTotal.value} 个 bbox`
   return '暂无 bbox'
 })
 const sourcePageFor = (page: number) => {
   return sourceMap.value.pages.find((item) => item.page === page)
 }
+const filteredSourcePageFor = (page: number) => {
+  return filteredSourceMap.value.pages.find((item) => item.page === page)
+}
 const sourceStatusForPage = (page: number) => {
-  const count = sourcePageFor(page)?.blocks.length || 0
-  return count ? `${count} 个 bbox` : '无 bbox'
+  const count = filteredSourcePageFor(page)?.blocks.length || 0
+  const total = sourcePageFor(page)?.blocks.length || 0
+  if (isSourceTypeFilterActive.value && total) return count ? `${count} / ${total} 个 bbox` : '无匹配'
+  return total ? `${total} 个 bbox` : '无 bbox'
+}
+const sourceTypeFilterCount = (filter: SourceTypeFilter) => {
+  if (filter === 'all') return sourceBlockTotal.value
+  return sourceMap.value.pages.reduce((total, pageItem) => {
+    return total + pageItem.blocks.filter((block) => sourceTypeFilterMatches(block.type, filter)).length
+  }, 0)
+}
+const firstVisibleSourceBlock = () => {
+  for (const pageItem of filteredSourceMap.value.pages) {
+    const block = pageItem.blocks[0]
+    if (block) return { page: pageItem.page, block }
+  }
+  return null
+}
+const activeSourceBlockVisible = () => {
+  if (!activeSourceBlockId.value) return false
+  return filteredSourceMap.value.pages.some((pageItem) => {
+    return pageItem.blocks.some((block) => block.id === activeSourceBlockId.value)
+  })
+}
+const setSourceTypeFilter = async (filter: SourceTypeFilter) => {
+  activeSourceTypeFilter.value = filter
+  await nextTick()
+  if (activeSourceBlockVisible()) return
+
+  const nextBlock = filteredSourcePageFor(activeSourcePage.value)?.blocks[0] || firstVisibleSourceBlock()?.block
+  const nextPage = filteredSourcePageFor(activeSourcePage.value)?.blocks[0]
+    ? activeSourcePage.value
+    : firstVisibleSourceBlock()?.page
+  activeSourcePage.value = nextPage || activeSourcePage.value
+  currentPdfPage.value = activeSourcePage.value
+  activeSourceBlockId.value = nextBlock?.id || ''
+  if (nextBlock) {
+    await pdfViewerRef.value?.scrollToBlock(activeSourcePage.value, nextBlock.id)
+    await scrollMarkdownBlockIntoView(nextBlock.id)
+  }
 }
 const parseMarkdownPages = (content: string): MarkdownPageSection[] => {
   const matches = Array.from(content.matchAll(/^#\s+Page\s+(\d+)\s*$/gim))
@@ -559,83 +653,28 @@ const pageSections = computed(() => parseMarkdownPages(parsedContent.value || ''
 const showPageLinkedMarkdown = computed(() => {
   return markdownVariant.value === 'markdown_page' && pageSections.value.length > 0
 })
-const normalizeTraceText = (value: string) => {
-  return value
-    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
-    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase()
-}
-const splitMarkdownChunks = (markdown: string) => {
-  const chunks: string[] = []
-  const current: string[] = []
-  const flush = () => {
-    const chunk = current.join('\n').trim()
-    if (chunk) chunks.push(chunk)
-    current.length = 0
-  }
-
-  markdown.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
-    if (!line.trim()) {
-      flush()
-      return
-    }
-    if (/^#{1,6}\s+/.test(line.trim())) {
-      flush()
-      chunks.push(line.trim())
-      return
-    }
-    current.push(line)
-  })
-  flush()
-  return chunks
-}
-const scoreTraceMatch = (markdown: string, sourceText: string) => {
-  const markdownText = normalizeTraceText(markdown)
-  const blockText = normalizeTraceText(sourceText)
-  if (!markdownText || !blockText) return 0
-  const sample = blockText.slice(0, Math.min(96, blockText.length))
-  const head = markdownText.slice(0, Math.min(96, markdownText.length))
-  if (sample && markdownText.includes(sample)) return sample.length + 120
-  if (head && blockText.includes(head)) return head.length + 80
-
-  const blockWords = blockText.split(' ').filter((word) => word.length > 2)
-  if (!blockWords.length) return 0
-  const markdownWords = new Set(markdownText.split(' ').filter((word) => word.length > 2))
-  const overlap = blockWords.filter((word) => markdownWords.has(word)).length
-  return overlap / blockWords.length
-}
-const traceExcerptForBlock = (block: SourceBlock, chunks: string[], usedChunks: Set<number>) => {
-  let bestIndex = -1
-  let bestScore = 0
-  chunks.forEach((chunk, index) => {
-    const score = scoreTraceMatch(chunk, block.text) - (usedChunks.has(index) ? 0.25 : 0)
-    if (score > bestScore) {
-      bestScore = score
-      bestIndex = index
-    }
-  })
-  if (bestIndex >= 0 && bestScore > 0) {
-    usedChunks.add(bestIndex)
-    return { excerpt: chunks[bestIndex], score: bestScore }
-  }
-  return { excerpt: block.text, score: 0 }
-}
 const traceBlocksForSection = (section: MarkdownPageSection): MarkdownTraceBlock[] => {
-  const blocks = sourcePageFor(section.page)?.blocks || []
+  const blocks = filteredSourcePageFor(section.page)?.blocks || []
   const chunks = splitMarkdownChunks(section.markdown)
   const usedChunks = new Set<number>()
-  return blocks.map((block, index) => {
-    const trace = traceExcerptForBlock(block, chunks, usedChunks)
-    return {
+  const seenExcerpts = new Set<string>()
+  const traces: MarkdownTraceBlock[] = []
+  blocks.forEach((block, index) => {
+    const trace = traceExcerptForBlock(block, chunks, usedChunks, {
+      includeNearbyTable: sourceTypeFilterFor(block.type) === 'table'
+    })
+    const traceBlock = {
       block,
       excerpt: trace.excerpt,
       html: md.render(trace.excerpt || block.text || ' '),
       index: index + 1,
       score: trace.score
     }
+    if (shouldRenderTraceExcerpt(traceBlock.excerpt, seenExcerpts)) {
+      traces.push(traceBlock)
+    }
   })
+  return traces
 }
 const pageTraceSections = computed<MarkdownTraceSection[]>(() => {
   return pageSections.value.map((section) => ({
@@ -649,7 +688,7 @@ const traceSectionForPage = (page: number) => {
 const findBestBlockForSection = (section: MarkdownPageSection): SourceBlock | null => {
   const tracedBlock = traceSectionForPage(section.page)?.traceBlocks[0]?.block
   if (tracedBlock) return tracedBlock
-  const blocks = sourcePageFor(section.page)?.blocks || []
+  const blocks = filteredSourcePageFor(section.page)?.blocks || []
   if (!blocks.length) return null
   const sectionText = normalizeTraceText(section.markdown)
   if (!sectionText) return blocks[0]
@@ -719,7 +758,7 @@ const handlePdfPageChange = (page: number) => {
   currentPdfPage.value = page
   activeSourcePage.value = page
   if (pageChanged) {
-    activeSourceBlockId.value = sourcePageFor(page)?.blocks[0]?.id || ''
+    activeSourceBlockId.value = filteredSourcePageFor(page)?.blocks[0]?.id || ''
   }
   if (activeSourceBlockId.value) {
     void scrollMarkdownBlockIntoView(activeSourceBlockId.value)
@@ -900,6 +939,7 @@ const fetchSourceMap = async () => {
   const seq = ++sourceMapRequestSeq
   if (!file || !isPdf(file.filename)) {
     sourceMap.value = { pages: [] }
+    activeSourceTypeFilter.value = 'all'
     sourceMapLoading.value = false
     return
   }
@@ -910,8 +950,8 @@ const fetchSourceMap = async () => {
     if (seq !== sourceMapRequestSeq || currentFile.value?.id !== file.id) return
     sourceMap.value = data || { pages: [] }
     if (!activeSourceBlockId.value) {
-      const activePageSource = sourceMap.value.pages.find((item) => item.page === activeSourcePage.value)
-      activeSourceBlockId.value = activePageSource?.blocks[0]?.id || sourceMap.value.pages[0]?.blocks[0]?.id || ''
+      const activePageSource = filteredSourcePageFor(activeSourcePage.value)
+      activeSourceBlockId.value = activePageSource?.blocks[0]?.id || filteredSourceMap.value.pages[0]?.blocks[0]?.id || ''
     }
   } catch (e) {
     if (seq !== sourceMapRequestSeq || currentFile.value?.id !== file.id) return
@@ -1302,6 +1342,61 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   margin-left: 2px;
 }
 
+.source-type-filters {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 1px;
+  scrollbar-width: none;
+}
+
+.source-type-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.source-type-filter {
+  height: 28px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.source-type-filter:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-tertiary) 78%, transparent);
+}
+
+.source-type-filter.active {
+  border-color: color-mix(in srgb, var(--primary-color) 26%, var(--border-light));
+  background: color-mix(in srgb, var(--primary-tint) 36%, var(--bg-primary));
+  color: var(--primary-color);
+}
+
+.source-type-filter small {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font-size: 10px;
+  line-height: 1;
+}
+
 .markdown-tab {
   flex: 0 1 auto;
   min-width: 88px;
@@ -1327,25 +1422,25 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .markdown-content {
-  font-size: 15px;
-  line-height: 1.8;
+  font-size: 14px;
+  line-height: 1.64;
   color: var(--text-primary);
 }
 
 .markdown-pages {
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 18px;
 }
 
 .markdown-reader-pages {
-  max-width: 760px;
+  max-width: 720px;
   margin: 0 auto;
 }
 
 .markdown-page-section {
   position: relative;
-  padding-left: 18px;
+  padding-left: 14px;
   border-left: 1px solid var(--border-light);
   transition: border-color var(--transition-fast);
 }
@@ -1399,14 +1494,14 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 .markdown-source-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .markdown-reader-block {
   position: relative;
   display: block;
   width: 100%;
-  padding: 8px 74px 8px 14px;
+  padding: 6px 72px 6px 12px;
   border: 1px solid transparent;
   border-left: 2px solid transparent;
   border-radius: var(--radius-sm);
@@ -1432,7 +1527,7 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .markdown-reader-block.no-source-pill {
-  padding-right: 14px;
+  padding-right: 12px;
 }
 
 .reader-source-pill {
@@ -1462,22 +1557,48 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   background: var(--bg-primary);
 }
 
+.reader-source-pill.type-title {
+  color: var(--primary-color);
+}
+
+.reader-source-pill.type-table {
+  color: #8a5b16;
+}
+
+.reader-source-pill.type-image {
+  color: #0f766e;
+}
+
+.reader-source-pill.type-formula {
+  color: #7c3aed;
+}
+
+.reader-source-pill.type-assist {
+  color: var(--text-muted);
+}
+
+.markdown-filter-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .trace-content {
-  font-size: 14px;
-  line-height: 1.72;
+  font-size: 13px;
+  line-height: 1.56;
 }
 
 .trace-content :deep(h1),
 .trace-content :deep(h2),
 .trace-content :deep(h3) {
   margin-top: 0.25em;
-  font-size: 1.06em;
+  font-size: 1.04em;
 }
 
 .trace-content :deep(p),
 .trace-content :deep(ul),
 .trace-content :deep(ol) {
-  margin: 0.45em 0;
+  margin: 0.38em 0;
 }
 
 .trace-content :deep(:first-child) {
@@ -1548,17 +1669,28 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 .markdown-content :deep(h1),
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
-  font-weight: 600;
+  margin-top: 1.05em;
+  margin-bottom: 0.38em;
+  font-weight: 650;
+  line-height: 1.32;
   color: var(--text-primary);
 }
 
-.markdown-content :deep(h1) { font-size: 1.75em; border-bottom: 1px solid var(--border-light); padding-bottom: 0.3em; }
-.markdown-content :deep(h2) { font-size: 1.5em; }
-.markdown-content :deep(h3) { font-size: 1.25em; }
+.markdown-content :deep(h1) { font-size: 1.32em; border-bottom: 1px solid var(--border-light); padding-bottom: 0.18em; }
+.markdown-content :deep(h2) { font-size: 1.18em; }
+.markdown-content :deep(h3) { font-size: 1.08em; }
 
-.markdown-content :deep(p) { margin: 1em 0; }
+.markdown-content :deep(p) { margin: 0.58em 0; }
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 0.55em 0;
+  padding-left: 1.35em;
+}
+
+.markdown-content :deep(li + li) {
+  margin-top: 0.18em;
+}
 
 .markdown-content :deep(code) {
   background: var(--bg-tertiary);
@@ -1570,8 +1702,8 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 
 .markdown-content :deep(pre) {
   background: var(--bg-tertiary);
-  padding: 16px;
-  border-radius: var(--radius-md);
+  padding: 12px;
+  border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 
@@ -1582,20 +1714,39 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 
 .markdown-content :deep(table) {
   width: 100%;
-  border-collapse: collapse;
-  margin: 1em 0;
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0.62em 0;
+  font-size: 0.9em;
+  line-height: 1.36;
 }
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid var(--border-color);
-  padding: 10px 14px;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  padding: 6px 8px;
   text-align: left;
+  vertical-align: top;
 }
 
 .markdown-content :deep(th) {
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--bg-tertiary) 72%, var(--bg-primary));
   font-weight: 600;
+}
+
+.markdown-content :deep(tr:last-child > th),
+.markdown-content :deep(tr:last-child > td) {
+  border-bottom: none;
+}
+
+.markdown-content :deep(th:last-child),
+.markdown-content :deep(td:last-child) {
+  border-right: none;
 }
 
 .markdown-content :deep(img) {
@@ -1604,15 +1755,33 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .markdown-content :deep(blockquote) {
-  margin: 1em 0;
-  padding: 0 1em;
-  border-left: 4px solid var(--primary-color);
+  margin: 0.75em 0;
+  padding: 0 0.8em;
+  border-left: 2px solid color-mix(in srgb, var(--primary-color) 56%, var(--border-light));
   color: var(--text-secondary);
 }
 
 .markdown-content :deep(.katex-display) {
   overflow-x: auto;
-  margin: 1em 0;
+  margin: 0.72em 0;
+}
+
+.markdown-content.trace-content :deep(h1),
+.markdown-content.trace-content :deep(h2),
+.markdown-content.trace-content :deep(h3) {
+  margin: 0.38em 0 0.24em;
+  border-bottom: none;
+  padding-bottom: 0;
+  line-height: 1.28;
+}
+
+.markdown-content.trace-content :deep(h1) { font-size: 1.08em; }
+.markdown-content.trace-content :deep(h2) { font-size: 1.04em; }
+.markdown-content.trace-content :deep(h3) { font-size: 1em; }
+
+.markdown-content.trace-content :deep(table) {
+  margin: 0.48em 0;
+  font-size: 0.88em;
 }
 
 .markdown-content :deep(.katex-mathml) {

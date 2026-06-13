@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.database import get_db
+from app.api.parsed import _normalize_source_map
 from app.models.file import File as FileModel
 from app.models.parsed_content import ParsedContent
 from main import app
@@ -620,6 +621,40 @@ def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
             },
         ]
     }
+
+
+def test_source_map_keeps_longest_text_for_duplicate_bbox():
+    result = _normalize_source_map(
+        {
+            "pdf_info": [
+                {
+                    "page_idx": 0,
+                    "page_size": [600, 800],
+                    "para_blocks": [
+                        {
+                            "type": "text",
+                            "bbox": [84, 746, 528, 761],
+                            "text": "As depicted in Figure 3, the thinking time improves-",
+                        },
+                        {
+                            "type": "text",
+                            "bbox": [84, 746, 528, 761],
+                            "text": "As depicted in Figure 3, the thinking time improves throughout training.",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert result["pages"][0]["blocks"] == [
+        {
+            "id": "p1-b1",
+            "type": "text",
+            "text": "As depicted in Figure 3, the thinking time improves throughout training.",
+            "bbox": [84, 746, 528, 761],
+        }
+    ]
 
 
 def test_source_map_returns_empty_pages_when_middle_json_missing(monkeypatch):
