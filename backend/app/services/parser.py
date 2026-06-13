@@ -26,6 +26,18 @@ PARSER_STREAM = "file_parser_stream"
 CONSUMER_GROUP = "parser_workers"
 
 
+STAGE_PROGRESS = {
+    "queued": 0,
+    "fetching_source": 10,
+    "submitting_mineru": 20,
+    "waiting_mineru": 35,
+    "downloading_result": 70,
+    "syncing_artifacts": 85,
+    "postprocessing_popo": 92,
+    "completed": 100,
+}
+
+
 def read_config() -> dict[str, Any]:
     config_path = Path(os.getenv("MINERU_CONFIG_PATH", "/root/mineru.json"))
     if not config_path.exists():
@@ -85,6 +97,89 @@ class ParserService:
             public_endpoint=endpoint,
         )
 
+    @staticmethod
+    def _clamp_progress(value: int | float | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(100, number))
+
+    def _update_progress(
+        self,
+        file: FileModel,
+        stage: str,
+        message: str,
+        percent: int | float | None = None,
+        *,
+        status: FileStatus | None = None,
+        clear_mineru_task: bool = False,
+    ) -> None:
+        if status is not None:
+            file.status = status
+        file.parse_stage = stage
+        progress = self._clamp_progress(percent if percent is not None else STAGE_PROGRESS.get(stage))
+        if progress is not None:
+            current = self._clamp_progress(getattr(file, "progress_percent", None))
+            if current is not None and stage not in {"queued", "completed", "failed"}:
+                progress = max(current, progress)
+            file.progress_percent = progress
+        file.progress_message = message[:255]
+        file.last_heartbeat_at = datetime.now()
+        if clear_mineru_task:
+            file.mineru_task_id = None
+            file.mineru_task_status = None
+            file.mineru_task_payload = None
+        self.db.commit()
+
+    @staticmethod
+    def _extract_upstream_progress(payload: dict[str, Any]) -> int | None:
+        for key in ("progress", "percent", "percentage"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            try:
+                progress = float(value)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= progress <= 1:
+                progress *= 100
+            return max(0, min(100, int(progress)))
+        return None
+
+    @staticmethod
+    def _progress_message_from_payload(status: str, payload: dict[str, Any]) -> str:
+        for key in ("message", "msg", "detail", "stage"):
+            value = payload.get(key)
+            if value:
+                return str(value)[:255]
+        if status == "submitted":
+            return "MinerU 任务已提交"
+        return f"MinerU 状态: {status}"[:255]
+
+    def _record_mineru_task_progress(self, file: FileModel, event: dict[str, Any]) -> None:
+        try:
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            status = str(event.get("status") or payload.get("status") or "").lower() or None
+            stage = str(event.get("stage") or "waiting_mineru")
+            if stage not in STAGE_PROGRESS:
+                stage = "waiting_mineru"
+            message = str(event.get("message") or self._progress_message_from_payload(status or "unknown", payload))
+            file.mineru_task_id = str(event.get("task_id") or payload.get("task_id") or payload.get("id") or "")
+            file.mineru_task_status = status
+            file.mineru_task_payload = json.dumps(payload, ensure_ascii=False)
+            self._update_progress(
+                file,
+                stage,
+                message,
+                self._extract_upstream_progress(payload) or STAGE_PROGRESS[stage],
+                status=FileStatus.PARSING,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to persist MinerU task progress: {exc}")
+
     def process_file(
         self,
         file_name: str,
@@ -97,10 +192,14 @@ class ParserService:
         backend: str,
         mds_bucket: str,
         source_pdf_path: str,
+        progress_callback=None,
+        mineru_progress_callback=None,
     ) -> list[str]:
         if file_extension not in PDF_EXTENSIONS + IMAGE_EXTENSIONS + OFFICE_EXTENSIONS:
             raise ValueError(f"不支持的文件类型: {file_extension}")
 
+        if progress_callback:
+            progress_callback("submitting_mineru", "正在提交 MinerU 任务", STAGE_PROGRESS["submitting_mineru"])
         result = self.mineru_api_client.parse_file(
             filename=f"{file_name}{file_extension}",
             file_bytes=file_bytes,
@@ -109,10 +208,15 @@ class ParserService:
             lang=lang,
             formula_enable=formula_enable,
             table_enable=table_enable,
+            progress_callback=mineru_progress_callback,
         )
+        if progress_callback:
+            progress_callback("syncing_artifacts", "正在同步解析产物", STAGE_PROGRESS["syncing_artifacts"])
         artifact_sync = self.artifact_sync_factory(mds_bucket)
         synced = artifact_sync.sync_zip(result.content, output_name=file_name)
         try:
+            if progress_callback and getattr(getattr(self.popo_postprocessor, "config", None), "enabled", False):
+                progress_callback("postprocessing_popo", "正在执行 Popo 后处理", STAGE_PROGRESS["postprocessing_popo"])
             self.popo_postprocessor.postprocess(
                 mds_bucket,
                 file_name,
@@ -142,10 +246,15 @@ class ParserService:
                 parse_method = "ocr"
 
             backend = settings.get("backend", "pipeline")
-            file.status = FileStatus.PARSING
             file.error_message = None
             file.start_at = datetime.now()
-            self.db.commit()
+            self._update_progress(
+                file,
+                "fetching_source",
+                "正在读取源文件",
+                STAGE_PROGRESS["fetching_source"],
+                status=FileStatus.PARSING,
+            )
 
             response = minio_client.get_object(MINIO_BUCKET, file.minio_path)
             file_bytes = response.read()
@@ -166,6 +275,13 @@ class ParserService:
                 backend=backend,
                 mds_bucket=mds_bucket,
                 source_pdf_path=file.minio_path,
+                progress_callback=lambda stage, message, percent=None: self._update_progress(
+                    file,
+                    stage,
+                    message,
+                    percent,
+                ),
+                mineru_progress_callback=lambda event: self._record_mineru_task_progress(file, event),
             )
 
             parsed_content = ParsedContent(
@@ -175,18 +291,28 @@ class ParserService:
             )
             self.db.add(parsed_content)
 
-            file.status = FileStatus.PARSED
             file.error_message = None
             file.finish_at = datetime.now()
-            self.db.commit()
+            self._update_progress(
+                file,
+                "completed",
+                "解析完成",
+                STAGE_PROGRESS["completed"],
+                status=FileStatus.PARSED,
+            )
 
             return {"status": "success"}
 
         except Exception as e:
             self.db.rollback()
-            file.status = FileStatus.PARSE_FAILED
             file.error_message = str(e)[:1024]
-            self.db.commit()
+            self._update_progress(
+                file,
+                "failed",
+                file.error_message,
+                getattr(file, "progress_percent", None) or 0,
+                status=FileStatus.PARSE_FAILED,
+            )
             raise Exception(f"解析失败: {str(e)}")
 
     def get_parsed_content(self, file_id: int, user_id: str):
@@ -199,8 +325,14 @@ class ParserService:
 
     def queue_parse_file(self, file: FileModel, user_id: str, parse_method: str = "auto") -> dict[str, Any]:
         try:
-            file.status = FileStatus.PENDING
-            self.db.commit()
+            self._update_progress(
+                file,
+                "queued",
+                "队列等待中",
+                STAGE_PROGRESS["queued"],
+                status=FileStatus.PENDING,
+                clear_mineru_task=True,
+            )
 
             task_data = {
                 "file_id": file.id,

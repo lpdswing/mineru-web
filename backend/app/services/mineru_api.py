@@ -68,6 +68,7 @@ class MineruApiClient:
         lang: str,
         formula_enable: bool,
         table_enable: bool,
+        progress_callback=None,
     ) -> MineruParseResult:
         if self.use_async_tasks:
             return self._parse_file_async(
@@ -78,6 +79,7 @@ class MineruApiClient:
                 lang,
                 formula_enable,
                 table_enable,
+                progress_callback=progress_callback,
             )
         return self._parse_file_sync(
             filename,
@@ -117,6 +119,7 @@ class MineruApiClient:
         lang: str,
         formula_enable: bool,
         table_enable: bool,
+        progress_callback=None,
     ) -> MineruParseResult:
         data = self._form_data(backend, parse_method, lang, formula_enable, table_enable)
         files = {"files": (filename, file_bytes, "application/octet-stream")}
@@ -124,18 +127,32 @@ class MineruApiClient:
         task_id = submit.get("task_id") or submit.get("id")
         if not task_id:
             raise MineruApiError(f"MinerU API task response missing task id: {submit}")
+        if progress_callback:
+            progress_callback({"task_id": task_id, "status": "submitted", "payload": submit})
 
         deadline = time.time() + self.task_timeout_seconds
         while time.time() < deadline:
             status_payload = self._request("get", f"/tasks/{task_id}").json()
             status = str(status_payload.get("status", "")).lower()
             if status in {"done", "completed", "success", "finished"}:
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "task_id": task_id,
+                            "status": status,
+                            "stage": "downloading_result",
+                            "message": "正在下载解析结果",
+                            "payload": status_payload,
+                        }
+                    )
                 result = self._request("get", f"/tasks/{task_id}/result")
                 return MineruParseResult(
                     filename=filename,
                     content=result.content,
                     content_type=result.headers.get("content-type", ""),
                 )
+            if progress_callback:
+                progress_callback({"task_id": task_id, "status": status, "payload": status_payload})
             if status in {"failed", "error", "cancelled"}:
                 raise MineruApiError(f"MinerU API task {task_id} failed: {status_payload}")
             time.sleep(self.poll_interval_seconds)

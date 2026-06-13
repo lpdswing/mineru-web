@@ -69,7 +69,7 @@
           :header-cell-style="{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', fontWeight: 600 }"
         >
           <el-table-column type="selection" width="48" />
-          <el-table-column prop="filename" label="文件名称" min-width="200">
+          <el-table-column prop="filename" label="文件名称" min-width="220">
             <template #default="{ row }">
               <div class="file-name-cell">
                 <el-tag
@@ -83,22 +83,22 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="size" label="大小" width="100">
+          <el-table-column prop="size" label="大小" width="80">
             <template #default="{ row }">
               <span class="cell-text">{{ formatFileSize(row.size) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="uploadTime" label="上传时间" width="160">
+          <el-table-column prop="uploadTime" label="上传时间" width="140">
             <template #default="{ row }">
               <span class="cell-text">{{ formatDateTime(row.upload_time) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="finish_at" label="解析完成时间" width="160">
+          <el-table-column prop="finish_at" label="解析完成时间" width="140">
             <template #default="{ row }">
               <span class="cell-text">{{ formatDateTime(row.finish_at) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="110">
+          <el-table-column prop="status" label="状态" width="90">
             <template #default="{ row }">
               <div class="status-cell">
                 <span class="status-dot" :class="getStatusClass(row.status)"></span>
@@ -113,7 +113,31 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="280" fixed="right">
+          <el-table-column label="进度" min-width="220">
+            <template #default="{ row }">
+              <div class="progress-cell">
+                <div class="progress-head">
+                  <span class="progress-title">{{ getProgressTitle(row) }}</span>
+                  <span class="progress-value">{{ getProgressPercent(row) }}%</span>
+                </div>
+                <el-progress
+                  :percentage="getProgressPercent(row)"
+                  :status="getProgressStatus(row)"
+                  :show-text="false"
+                  :stroke-width="7"
+                />
+                <div class="progress-meta">
+                  <span v-for="item in getProgressMeta(row)" :key="item" class="progress-meta-item">
+                    {{ item }}
+                  </span>
+                  <span v-if="isProgressStale(row)" class="progress-meta-item warning">
+                    {{ getStaleLabel(row) }}
+                  </span>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220">
             <template #default="{ row }">
               <div class="action-cell">
                 <el-button class="action-link" link @click="openPreview(row)">查看</el-button>
@@ -197,6 +221,7 @@ const pollingTimer = ref<number | null>(null)
 const searchTimer = ref<number | null>(null)
 const POLLING_INTERVAL = 3000
 const SEARCH_DEBOUNCE_MS = 300
+const PARSE_STALE_AFTER_SECONDS = Number(import.meta.env.VITE_PARSE_STALE_AFTER_SECONDS || 600)
 
 const params = reactive({
   page: 1,
@@ -227,6 +252,116 @@ const getStatusClass = (status: string) => {
     parse_failed: 'status-error'
   }
   return map[status] || 'status-pending'
+}
+
+const parseStageNames: Record<string, string> = {
+  queued: '队列等待',
+  fetching_source: '读取源文件',
+  submitting_mineru: '提交 MinerU 任务',
+  waiting_mineru: '等待 MinerU 状态',
+  downloading_result: '下载解析结果',
+  syncing_artifacts: '同步解析产物',
+  postprocessing_popo: 'Popo 后处理',
+  completed: '解析完成',
+  failed: '解析失败'
+}
+
+const clampProgress = (value?: number | null) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+const getProgressPercent = (file: FileItem) => {
+  if (file.status === 'parsed') return 100
+  return clampProgress(file.progress_percent)
+}
+
+const getProgressTitle = (file: FileItem) => {
+  if (file.status === 'parsed') return '解析完成'
+  if (file.status === 'parse_failed') return file.progress_message || '解析失败'
+  return file.progress_message || parseStageNames[file.parse_stage || ''] || getStatusText(file.status)
+}
+
+const getProgressStatus = (file: FileItem): 'success' | 'exception' | 'warning' | undefined => {
+  if (file.status === 'parsed') return 'success'
+  if (file.status === 'parse_failed' || isProgressStale(file)) return 'exception'
+  if (file.status === 'pending') return 'warning'
+  return undefined
+}
+
+const shortTaskId = (taskId?: string | null) => {
+  if (!taskId) return ''
+  return taskId.length > 12 ? taskId.slice(-12) : taskId
+}
+
+const formatDuration = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+const durationSince = (dateStr?: string | null) => {
+  if (!dateStr) return ''
+  const timestamp = new Date(dateStr).getTime()
+  if (Number.isNaN(timestamp)) return ''
+  return formatDuration(Date.now() - timestamp)
+}
+
+const durationBetween = (start?: string | null, end?: string | null) => {
+  if (!start || !end) return ''
+  const startTime = new Date(start).getTime()
+  const endTime = new Date(end).getTime()
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return ''
+  return formatDuration(endTime - startTime)
+}
+
+const estimateRemaining = (file: FileItem) => {
+  if (file.status !== 'parsing' || !file.start_at) return ''
+  const progress = getProgressPercent(file)
+  if (progress <= 0 || progress >= 100) return ''
+  const startTime = new Date(file.start_at).getTime()
+  if (Number.isNaN(startTime)) return ''
+  const elapsed = Date.now() - startTime
+  const remaining = (elapsed / progress) * (100 - progress)
+  return formatDuration(remaining)
+}
+
+const getProgressMeta = (file: FileItem) => {
+  const meta: string[] = []
+  if (file.mineru_task_status) meta.push(`MinerU: ${file.mineru_task_status}`)
+  const taskId = shortTaskId(file.mineru_task_id)
+  if (taskId) meta.push(`Task ${taskId}`)
+  if (file.status === 'parsed') {
+    const duration = durationBetween(file.start_at, file.finish_at)
+    if (duration) meta.push(`总耗时 ${duration}`)
+  } else if (file.status === 'pending') {
+    const waiting = durationSince(file.upload_time)
+    if (waiting) meta.push(`等待 ${waiting}`)
+  } else if (file.start_at) {
+    const elapsed = durationSince(file.start_at)
+    if (elapsed) meta.push(`已耗时 ${elapsed}`)
+    const remaining = estimateRemaining(file)
+    if (remaining) meta.push(`约剩余 ${remaining}`)
+  }
+  const stageName = parseStageNames[file.parse_stage || '']
+  if (stageName && stageName !== getProgressTitle(file)) meta.push(stageName)
+  return meta
+}
+
+const isProgressStale = (file: FileItem) => {
+  if (file.status !== 'parsing' || !file.last_heartbeat_at) return false
+  const heartbeat = new Date(file.last_heartbeat_at).getTime()
+  if (Number.isNaN(heartbeat)) return false
+  return Date.now() - heartbeat > PARSE_STALE_AFTER_SECONDS * 1000
+}
+
+const getStaleLabel = (file: FileItem) => {
+  const staleFor = durationSince(file.last_heartbeat_at)
+  return staleFor ? `可能卡住 · ${staleFor} 无更新` : '可能卡住'
 }
 
 const openPreview = (file: FileItem) => {
@@ -596,11 +731,15 @@ watch(hasParsingFiles, (hasParsing) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .file-name {
   font-weight: 500;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cell-text {
@@ -638,10 +777,72 @@ watch(hasParsingFiles, (hasParsing) => {
   background: var(--danger-color);
 }
 
+.progress-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.progress-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-value {
+  color: var(--primary-color);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.progress-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.progress-meta-item {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.progress-meta-item.warning {
+  color: var(--danger-color);
+  background: color-mix(in srgb, var(--danger-color) 10%, var(--bg-primary));
+}
+
 .action-cell {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.action-cell .el-button {
+  margin-left: 0 !important;
+  padding: 0;
+}
+
+.action-cell .el-dropdown {
+  flex-shrink: 0;
 }
 
 .action-link {

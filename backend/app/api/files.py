@@ -1,4 +1,6 @@
 import mimetypes
+import os
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query, HTTPException, Depends
@@ -11,7 +13,65 @@ from app.models.parsed_content import ParsedContent
 from app.utils.minio_client import minio_client, MINIO_BUCKET
 from app.utils.user_dep import get_user_id
 
+try:
+    from minio.error import S3Error
+except ImportError:
+    S3Error = None
+
 router = APIRouter()
+MINIO_MDS_BUCKET = os.getenv("MINIO_MDS_BUCKET", "mds")
+_MINIO_MISSING_ERROR_CODES = {"NoSuchKey", "NoSuchObject", "NoSuchBucket", "NotFound"}
+
+
+def _artifact_stem(file: FileModel) -> str:
+    return Path(file.minio_path).stem
+
+
+def _parsed_artifact_paths(file: FileModel) -> list[str]:
+    stem = _artifact_stem(file)
+    return [
+        f"{stem}.md",
+        f"{stem}_pages.md",
+        f"{stem}_popo.md",
+        f"{stem}_popo_status.json",
+        f"{stem}_middle.json",
+    ]
+
+
+def _is_missing_minio_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    if S3Error and isinstance(exc, S3Error):
+        return exc.code in _MINIO_MISSING_ERROR_CODES
+    return False
+
+
+def _remove_minio_object(bucket: str, path: str) -> None:
+    try:
+        minio_client.remove_object(bucket, path)
+    except Exception as exc:
+        if _is_missing_minio_error(exc):
+            return
+        raise
+
+
+def _remove_minio_prefix(bucket: str, prefix: str) -> None:
+    try:
+        for obj in minio_client.list_objects(bucket, prefix=prefix, recursive=True):
+            _remove_minio_object(bucket, obj.object_name)
+    except Exception as exc:
+        if _is_missing_minio_error(exc):
+            return
+        raise
+
+
+def _remove_parsed_artifacts(file: FileModel) -> None:
+    for path in _parsed_artifact_paths(file):
+        _remove_minio_object(MINIO_MDS_BUCKET, path)
+
+    prefix = f"{_artifact_stem(file)}/"
+    _remove_minio_prefix(MINIO_MDS_BUCKET, prefix)
+
 
 @router.get("/files")
 def list_files(
@@ -116,7 +176,8 @@ def delete_file(
 
     try:
         # 删除 MinIO 对象
-        minio_client.remove_object(MINIO_BUCKET, file.minio_path)
+        _remove_minio_object(MINIO_BUCKET, file.minio_path)
+        _remove_parsed_artifacts(file)
 
         # 删除解析内容
         db.query(ParsedContent).filter(

@@ -3,6 +3,8 @@ services:
     image: lpdswing/mineru-web-frontend:v3.2.3
     ports:
       - "8088:80"
+    environment:
+      - TZ=Asia/Shanghai
     depends_on:
       - backend
       - minio
@@ -12,6 +14,7 @@ services:
   backend:
     image: lpdswing/mineru-web-backend:v3.2.3
     environment:
+      - TZ=Asia/Shanghai
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. SERVER_IP:9000}
       - DATABASE_URL=sqlite:///./mineru.db
@@ -35,6 +38,7 @@ services:
       replicas: ${WORKER_REPLICAS:-1}
     command: python3 run_worker.py
     environment:
+      - TZ=Asia/Shanghai
       - REDIS_HOST=redis
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. SERVER_IP:9000}
       - DATABASE_URL=sqlite:///./mineru.db
@@ -70,6 +74,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      TZ: Asia/Shanghai
       MINERU_MODEL_SOURCE: local
       MINERU_API_OUTPUT_ROOT: /output
     entrypoint: mineru-router
@@ -114,6 +119,8 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -131,6 +138,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
+      TZ: Asia/Shanghai
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:

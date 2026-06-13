@@ -401,7 +401,15 @@ def get_parse_status(
     if not file:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    return {
+    payload = None
+    raw_payload = getattr(file, "mineru_task_payload", None)
+    if raw_payload:
+        try:
+            payload = json.loads(raw_payload)
+        except (TypeError, ValueError):
+            payload = None
+
+    result = {
         "file_id": file_id,
         "status": file.status.value,
         "message": {
@@ -409,8 +417,17 @@ def get_parse_status(
             FileStatus.PARSING.value: "正在解析",
             FileStatus.PARSED.value: "解析完成",
             FileStatus.PARSE_FAILED.value: "解析失败"
-        }.get(file.status.value, "未知状态")
+        }.get(file.status.value, "未知状态"),
+        "parse_stage": getattr(file, "parse_stage", None),
+        "progress_percent": getattr(file, "progress_percent", None),
+        "progress_message": getattr(file, "progress_message", None),
+        "last_heartbeat_at": file.last_heartbeat_at.isoformat() if getattr(file, "last_heartbeat_at", None) else None,
+        "mineru_task_id": getattr(file, "mineru_task_id", None),
+        "mineru_task_status": getattr(file, "mineru_task_status", None),
     }
+    if payload is not None:
+        result["mineru_task_payload"] = payload
+    return result
 
 @router.get("/files/{file_id}/export")
 def export_content(
