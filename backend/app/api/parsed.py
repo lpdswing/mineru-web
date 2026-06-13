@@ -22,6 +22,33 @@ except ImportError:
 router = APIRouter()
 
 _MINIO_MISSING_ERROR_CODES = {"NoSuchKey", "NoSuchObject", "NoSuchBucket", "NotFound"}
+_SOURCE_TEXT_KEYS = {"text", "content", "markdown", "html", "latex", "equation", "body", "caption", "footnote"}
+_SOURCE_TEXT_KEY_SUFFIXES = ("_text", "_content", "_body", "_caption", "_footnote")
+_SOURCE_TEXT_SKIP_KEYS = {
+    "bbox",
+    "layout_bbox",
+    "line_bbox",
+    "span_bbox",
+    "poly",
+    "page",
+    "page_idx",
+    "page_size",
+    "size",
+    "width",
+    "height",
+    "w",
+    "h",
+    "id",
+    "uid",
+    "uuid",
+    "type",
+    "block_type",
+    "category_type",
+    "sub_type",
+    "score",
+    "order",
+    "index",
+}
 
 
 def _artifact_stem(file: FileModel) -> str:
@@ -135,6 +162,17 @@ def _clean_source_text(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _is_source_text_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    normalized = key.lower()
+    return normalized in _SOURCE_TEXT_KEYS or normalized.endswith(_SOURCE_TEXT_KEY_SUFFIXES)
+
+
+def _is_source_text_skip_key(key: Any) -> bool:
+    return isinstance(key, str) and key.lower() in _SOURCE_TEXT_SKIP_KEYS
+
+
 def _extract_text(value: Any) -> str:
     if isinstance(value, str):
         return _clean_source_text(value)
@@ -145,18 +183,18 @@ def _extract_text(value: Any) -> str:
         return ""
 
     direct_parts = []
-    for key in ("text", "content", "markdown", "html", "latex", "equation"):
-        if key in value and value[key] is not None:
-            text = _clean_source_text(value[key])
+    for key, item in value.items():
+        if item is not None and _is_source_text_key(key):
+            text = _extract_text(item) if isinstance(item, dict | list) else _clean_source_text(item)
             if text:
                 direct_parts.append(text)
     if direct_parts:
         return " ".join(direct_parts).strip()
 
     nested_parts = []
-    for key in ("lines", "spans", "children", "blocks", "cells", "rows"):
-        if key in value:
-            text = _extract_text(value[key])
+    for key, item in value.items():
+        if not _is_source_text_skip_key(key) and isinstance(item, dict | list):
+            text = _extract_text(item)
             if text:
                 nested_parts.append(text)
     return " ".join(nested_parts).strip()

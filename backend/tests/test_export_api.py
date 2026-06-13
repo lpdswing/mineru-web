@@ -530,6 +530,13 @@ def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
                             "poly": [30, 40, 180, 40, 180, 90, 30, 90],
                             "text": "A1",
                         },
+                        {
+                            "type": "image",
+                            "bbox": [40, 100, 220, 180],
+                            "image_caption": [
+                                {"spans": [{"content": "A caption from a new container"}]}
+                            ],
+                        },
                     ],
                 },
                 {
@@ -584,6 +591,12 @@ def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
                         "type": "table",
                         "text": "A1",
                         "bbox": [30, 40, 180, 90],
+                    },
+                    {
+                        "id": "p1-b3",
+                        "type": "image",
+                        "text": "A caption from a new container",
+                        "bbox": [40, 100, 220, 180],
                     },
                 ],
             },

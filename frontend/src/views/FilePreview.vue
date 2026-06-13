@@ -171,7 +171,27 @@
           :class="{ 'full-width': viewMode === 'markdown' || markdownVariant === 'compare' }"
         >
           <div class="panel-content">
-            <div class="markdown-toolbar">
+            <div v-if="isPdf(currentFile?.filename)" class="pdf-review-bar">
+              <div class="pdf-review-title">
+                <span>{{ markdownVariant === 'compare' ? 'OCR / Popo 对照' : 'Markdown 预览' }}</span>
+                <small>
+                  {{ markdownVariant === 'compare' ? '原始 OCR 结果 / Popo 增强结果' : `Page ${activeSourcePage} / ${pageSections.length || 0}` }}
+                </small>
+              </div>
+              <div class="pdf-review-actions">
+                <button
+                  v-for="(name, variant) in pdfMarkdownVariantNames"
+                  :key="variant"
+                  class="pdf-review-mode"
+                  :class="{ active: markdownVariant === variant }"
+                  @click="handleMarkdownVariant(variant)"
+                >
+                  {{ name }}
+                </button>
+                <span v-if="markdownVariant !== 'compare'" class="source-trace-chip">{{ sourceTraceLabel }}</span>
+              </div>
+            </div>
+            <div v-else class="markdown-toolbar">
               <button
                 v-for="(name, variant) in markdownVariantNames"
                 :key="variant"
@@ -181,7 +201,6 @@
               >
                 {{ name }}
               </button>
-              <span v-if="isPdf(currentFile?.filename)" class="source-trace-chip">{{ sourceTraceLabel }}</span>
             </div>
             <div v-if="loading" class="loading-state">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
@@ -193,8 +212,8 @@
             <div v-else-if="markdownVariant === 'compare'" class="markdown-compare">
               <section class="compare-column">
                 <div class="compare-header">
-                  <span>Markdown</span>
-                  <small>原始解析结果</small>
+                  <span>原始 OCR Markdown</span>
+                  <small>MinerU 原始解析结果</small>
                 </div>
                 <div
                   v-if="compareMarkdownContent"
@@ -205,7 +224,7 @@
               </section>
               <section class="compare-column">
                 <div class="compare-header">
-                  <span>Popo Markdown</span>
+                  <span>Popo 增强 Markdown</span>
                   <small>{{ comparePopoStatusLabel }}</small>
                 </div>
                 <div
@@ -224,7 +243,7 @@
             <div
               v-else-if="showPageLinkedMarkdown"
               ref="markdownScrollRef"
-              class="markdown-pages"
+              class="markdown-pages markdown-reader-pages"
             >
               <section
                 v-for="section in pageTraceSections"
@@ -234,7 +253,7 @@
                 :data-page="section.page"
               >
                 <button
-                  class="markdown-page-meta"
+                  class="markdown-page-meta reader-page-marker"
                   type="button"
                   @click="handleMarkdownPageClick(section)"
                 >
@@ -245,8 +264,11 @@
                   <article
                     v-for="trace in section.traceBlocks"
                     :key="trace.block.id"
-                    class="markdown-source-block"
-                    :class="{ active: trace.block.id === activeSourceBlockId }"
+                    class="markdown-reader-block"
+                    :class="{
+                      active: trace.block.id === activeSourceBlockId,
+                      'no-source-pill': trace.block.type === 'page_number'
+                    }"
                     :data-source-block-id="trace.block.id"
                     tabindex="0"
                     role="button"
@@ -254,11 +276,10 @@
                     @keydown.enter.prevent="handleMarkdownBlockClick(section, trace)"
                     @keydown.space.prevent="handleMarkdownBlockClick(section, trace)"
                   >
-                    <div class="markdown-source-meta">
-                      <span>Block {{ trace.index }}</span>
-                      <small>{{ trace.block.type }}</small>
-                    </div>
                     <div class="markdown-content trace-content" v-html="trace.html"></div>
+                    <span v-if="trace.block.type !== 'page_number'" class="reader-source-pill">
+                      P{{ section.page }} · {{ trace.block.type }}
+                    </span>
                   </article>
                 </div>
                 <div v-else class="markdown-content page-content" v-html="section.html"></div>
@@ -475,6 +496,10 @@ const markdownVariantNames: Record<MarkdownViewVariant, string> = {
   markdown_page: '按页 Markdown',
   popo: 'Popo 增强',
   compare: '对比'
+}
+const pdfMarkdownVariantNames: Record<'markdown_page' | 'compare', string> = {
+  markdown_page: '溯源阅读',
+  compare: 'OCR-Popo 对照'
 }
 const popoStatusNames: Record<PopoStatusValue, string> = {
   not_available: 'Popo 结果暂不可用',
@@ -1013,7 +1038,9 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .sidebar-search {
+  width: calc(100% - 32px);
   margin: 12px 16px;
+  box-sizing: border-box;
 }
 
 .sidebar-list {
@@ -1190,6 +1217,73 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   border-radius: var(--radius-md);
 }
 
+.pdf-review-bar {
+  position: sticky;
+  top: -24px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: -24px -24px 18px;
+  padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.pdf-review-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-review-title span {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pdf-review-title small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pdf-review-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pdf-review-mode {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.pdf-review-mode:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-tertiary) 72%, transparent);
+}
+
+.pdf-review-mode.active {
+  border-color: var(--border-light);
+  background: var(--bg-primary);
+  color: var(--primary-color);
+}
+
 .source-trace-chip {
   margin-left: auto;
   padding: 0 10px;
@@ -1202,6 +1296,10 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   color: var(--text-muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.pdf-review-actions .source-trace-chip {
+  margin-left: 2px;
 }
 
 .markdown-tab {
@@ -1237,18 +1335,23 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 .markdown-pages {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 26px;
+}
+
+.markdown-reader-pages {
+  max-width: 760px;
+  margin: 0 auto;
 }
 
 .markdown-page-section {
   position: relative;
-  padding-left: 12px;
-  border-left: 2px solid transparent;
+  padding-left: 18px;
+  border-left: 1px solid var(--border-light);
   transition: border-color var(--transition-fast);
 }
 
 .markdown-page-section.active {
-  border-left-color: color-mix(in srgb, var(--primary-color) 68%, var(--border-light));
+  border-left-color: color-mix(in srgb, var(--primary-color) 58%, var(--border-light));
 }
 
 .markdown-page-meta {
@@ -1270,6 +1373,19 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   font-weight: 600;
 }
 
+.reader-page-marker {
+  position: sticky;
+  top: -24px;
+  z-index: 1;
+  min-height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.reader-page-marker:hover {
+  color: var(--text-primary);
+}
+
 .markdown-page-meta small {
   min-width: 0;
   color: var(--text-muted);
@@ -1283,61 +1399,72 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 .markdown-source-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 
-.markdown-source-block {
+.markdown-reader-block {
+  position: relative;
   display: block;
   width: 100%;
-  padding: 11px 13px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-secondary));
+  padding: 8px 74px 8px 14px;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
-.markdown-source-block:hover,
-.markdown-source-block:focus-visible {
-  border-color: color-mix(in srgb, var(--primary-color) 36%, var(--border-light));
-  background: var(--bg-primary);
+.markdown-reader-block:hover,
+.markdown-reader-block:focus-visible {
+  border-color: color-mix(in srgb, var(--primary-color) 22%, transparent);
+  border-left-color: color-mix(in srgb, var(--primary-color) 42%, var(--border-light));
+  background: color-mix(in srgb, var(--primary-tint) 18%, transparent);
 }
 
-.markdown-source-block.active {
-  border-color: color-mix(in srgb, var(--primary-color) 72%, var(--border-light));
-  background: color-mix(in srgb, var(--primary-tint) 42%, var(--bg-primary));
-  box-shadow: 0 10px 24px rgb(0 0 0 / 6%);
+.markdown-reader-block.active {
+  border-color: color-mix(in srgb, var(--primary-color) 30%, var(--border-light));
+  border-left-color: color-mix(in srgb, var(--primary-color) 82%, var(--border-light));
+  background: color-mix(in srgb, var(--primary-tint) 30%, var(--bg-primary));
+  box-shadow: 0 8px 22px rgb(0 0 0 / 4%);
 }
 
-.markdown-source-meta {
-  display: flex;
+.markdown-reader-block.no-source-pill {
+  padding-right: 14px;
+}
+
+.reader-source-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  max-width: 58px;
+  height: 20px;
+  padding: 0 7px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 7px;
-}
-
-.markdown-source-meta span {
-  color: var(--primary-color);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.markdown-source-meta small {
-  min-width: 0;
-  max-width: 55%;
+  justify-content: center;
   overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
   color: var(--text-muted);
   font-size: 11px;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.markdown-reader-block.active .reader-source-pill {
+  border-color: color-mix(in srgb, var(--primary-color) 36%, var(--border-light));
+  color: var(--primary-color);
+  background: var(--bg-primary);
+}
+
 .trace-content {
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.72;
 }
 
 .trace-content :deep(h1),
