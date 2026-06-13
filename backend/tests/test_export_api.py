@@ -533,8 +533,12 @@ def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
                         {
                             "type": "image",
                             "bbox": [40, 100, 220, 180],
-                            "image_caption": [
-                                {"spans": [{"content": "A caption from a new container"}]}
+                            "blocks": [
+                                {
+                                    "type": "image_caption",
+                                    "bbox": [45, 185, 215, 205],
+                                    "lines": [{"spans": [{"content": "A caption from a documented nested block"}]}],
+                                }
                             ],
                         },
                     ],
@@ -595,7 +599,7 @@ def test_source_map_returns_blocks_from_nested_middle_json(monkeypatch):
                     {
                         "id": "p1-b3",
                         "type": "image",
-                        "text": "A caption from a new container",
+                        "text": "A caption from a documented nested block",
                         "bbox": [40, 100, 220, 180],
                     },
                 ],

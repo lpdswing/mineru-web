@@ -22,33 +22,6 @@ except ImportError:
 router = APIRouter()
 
 _MINIO_MISSING_ERROR_CODES = {"NoSuchKey", "NoSuchObject", "NoSuchBucket", "NotFound"}
-_SOURCE_TEXT_KEYS = {"text", "content", "markdown", "html", "latex", "equation", "body", "caption", "footnote"}
-_SOURCE_TEXT_KEY_SUFFIXES = ("_text", "_content", "_body", "_caption", "_footnote")
-_SOURCE_TEXT_SKIP_KEYS = {
-    "bbox",
-    "layout_bbox",
-    "line_bbox",
-    "span_bbox",
-    "poly",
-    "page",
-    "page_idx",
-    "page_size",
-    "size",
-    "width",
-    "height",
-    "w",
-    "h",
-    "id",
-    "uid",
-    "uuid",
-    "type",
-    "block_type",
-    "category_type",
-    "sub_type",
-    "score",
-    "order",
-    "index",
-}
 
 
 def _artifact_stem(file: FileModel) -> str:
@@ -162,42 +135,39 @@ def _clean_source_text(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _is_source_text_key(key: Any) -> bool:
-    if not isinstance(key, str):
-        return False
-    normalized = key.lower()
-    return normalized in _SOURCE_TEXT_KEYS or normalized.endswith(_SOURCE_TEXT_KEY_SUFFIXES)
-
-
-def _is_source_text_skip_key(key: Any) -> bool:
-    return isinstance(key, str) and key.lower() in _SOURCE_TEXT_SKIP_KEYS
+def _join_source_text(parts: list[str]) -> str:
+    seen = set()
+    unique_parts = []
+    for part in parts:
+        if part and part not in seen:
+            seen.add(part)
+            unique_parts.append(part)
+    return " ".join(unique_parts).strip()
 
 
 def _extract_text(value: Any) -> str:
     if isinstance(value, str):
         return _clean_source_text(value)
     if isinstance(value, list):
-        parts = [_extract_text(item) for item in value]
-        return " ".join(part for part in parts if part).strip()
+        return _join_source_text([_extract_text(item) for item in value])
     if not isinstance(value, dict):
         return ""
 
-    direct_parts = []
-    for key, item in value.items():
-        if item is not None and _is_source_text_key(key):
-            text = _extract_text(item) if isinstance(item, dict | list) else _clean_source_text(item)
-            if text:
-                direct_parts.append(text)
-    if direct_parts:
-        return " ".join(direct_parts).strip()
+    parts = []
+    for key in ("text", "content"):
+        item = value.get(key)
+        if isinstance(item, str):
+            parts.append(_clean_source_text(item))
+        elif isinstance(item, dict | list):
+            parts.append(_extract_text(item))
+    if parts:
+        return _join_source_text(parts)
 
-    nested_parts = []
-    for key, item in value.items():
-        if not _is_source_text_skip_key(key) and isinstance(item, dict | list):
-            text = _extract_text(item)
-            if text:
-                nested_parts.append(text)
-    return " ".join(nested_parts).strip()
+    for key in ("spans", "lines", "blocks"):
+        item = value.get(key)
+        if isinstance(item, dict | list):
+            parts.append(_extract_text(item))
+    return _join_source_text(parts)
 
 
 def _extract_block_type(item: dict[str, Any]) -> str:
