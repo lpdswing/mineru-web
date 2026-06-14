@@ -71,17 +71,14 @@ For Linux server deployment, macOS Apple Silicon setup, model downloads, MinerU 
   <img src="images/home.png" alt="Home" width="800">
   <p>Home - system overview and quick actions</p>
 
+  <img src="images/upload.png" alt="Upload" width="800">
+  <p>Upload - drag and drop documents into the parsing queue</p>
+
   <img src="images/files.png" alt="File management" width="800">
   <p>Files - upload and manage multiple document formats</p>
 
-  <img src="images/files-progress.png" alt="File parsing progress" width="800">
-  <p>Files - MinerU task status, progress, task id, and elapsed time</p>
-
   <img src="images/preview.png" alt="Document preview" width="800">
   <p>Preview - parse and inspect document content</p>
-
-  <img src="images/pdf-source-preview.png" alt="PDF source tracing" width="800">
-  <p>PDF source tracing - source bbox highlights on the left and page/block-linked Markdown on the right</p>
 
   <img src="images/pdf-table-trace.png" alt="PDF table tracing" width="800">
   <p>Table tracing - filter table blocks and compare the PDF region with the Markdown table</p>
