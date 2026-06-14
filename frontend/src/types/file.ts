@@ -15,6 +15,7 @@ export type BackendType =
 // 文件项接口
 export interface FileItem {
   id: string
+  folder_id?: number | null
   filename: string
   size: number
   upload_time: string
@@ -29,6 +30,13 @@ export interface FileItem {
   last_heartbeat_at?: string | null
   mineru_task_id?: string | null
   mineru_task_status?: string | null
+}
+
+export interface FolderItem {
+  id: number
+  user_id: string
+  name: string
+  created_at?: string | null
 }
 
 // 导出格式类型

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.models.base import Base
 from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
@@ -9,6 +9,7 @@ class File(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(64), nullable=False, index=True)
+    folder_id = Column(Integer, ForeignKey('folders.id', ondelete='SET NULL'), nullable=True, index=True)
     filename = Column(String(256), nullable=False, index=True)  # 添加索引用于搜索
     size = Column(Integer, nullable=False)
     status = Column(Enum(FileStatus), default=FileStatus.PENDING, index=True)  # 添加索引用于过滤
@@ -39,6 +40,7 @@ class File(Base):
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'folder_id': self.folder_id,
             'filename': self.filename,
             'size': self.size,
             'status': self.status.value if self.status else None,

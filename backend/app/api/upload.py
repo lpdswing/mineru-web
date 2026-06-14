@@ -3,11 +3,12 @@ import os
 import uuid
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.file import File as FileModel
 from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
+from app.models.folder import Folder
 from app.models.settings import Settings
 from app.utils.minio_client import upload_file
 from app.utils.user_dep import get_user_id
@@ -18,10 +19,16 @@ router = APIRouter()
 @router.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
+    folder_id: int | None = Form(None),
     user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
     results = []
+
+    if folder_id is not None:
+        folder = db.query(Folder).filter(Folder.id == folder_id, Folder.user_id == user_id).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="文件夹不存在")
 
     for file in files:
         try:
@@ -51,7 +58,8 @@ async def upload_files(
                 upload_time=datetime.utcnow(),
                 minio_path=unique_filename,
                 content_type=file.content_type,
-                backend=backend
+                backend=backend,
+                folder_id=folder_id
             )
             db.add(db_file)
             db.commit()

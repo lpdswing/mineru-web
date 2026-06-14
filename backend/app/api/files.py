@@ -5,10 +5,12 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.file import File as FileModel
+from app.models.folder import Folder
 from app.models.parsed_content import ParsedContent
 from app.utils.minio_client import minio_client, MINIO_BUCKET
 from app.utils.user_dep import get_user_id
@@ -21,6 +23,10 @@ except ImportError:
 router = APIRouter()
 MINIO_MDS_BUCKET = os.getenv("MINIO_MDS_BUCKET", "mds")
 _MINIO_MISSING_ERROR_CODES = {"NoSuchKey", "NoSuchObject", "NoSuchBucket", "NotFound"}
+
+
+class FileFolderPayload(BaseModel):
+    folder_id: int | None = None
 
 
 def _artifact_stem(file: FileModel) -> str:
@@ -79,6 +85,7 @@ def list_files(
     page_size: int = Query(20, ge=1, le=100),
     search: str = Query('', description="按文件名搜索"),
     status: str = Query('', description="按状态筛选"),
+    folder_id: str = Query('', description="按文件夹筛选，none 表示未分类"),
     user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
@@ -87,6 +94,13 @@ def list_files(
         query = query.filter(FileModel.filename.contains(search))
     if status:
         query = query.filter(FileModel.status == status.upper())
+    if folder_id == "none":
+        query = query.filter(FileModel.folder_id.is_(None))
+    elif folder_id:
+        try:
+            query = query.filter(FileModel.folder_id == int(folder_id))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="文件夹参数无效")
     total = query.count()
     files = query.order_by(FileModel.upload_time.desc()) \
         .offset((page-1)*page_size).limit(page_size).all()
@@ -163,6 +177,28 @@ def file_content(
         media_type=content_type,
         headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
     )
+
+
+@router.patch("/files/{file_id}/folder")
+def move_file_to_folder(
+    file_id: int,
+    payload: FileFolderPayload,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    file = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    if payload.folder_id is not None:
+        folder = db.query(Folder).filter(Folder.id == payload.folder_id, Folder.user_id == user_id).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="文件夹不存在")
+
+    file.folder_id = payload.folder_id
+    db.commit()
+    db.refresh(file)
+    return file.to_dict()
 
 @router.delete("/files/{file_id}")
 def delete_file(

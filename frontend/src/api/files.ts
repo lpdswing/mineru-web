@@ -1,6 +1,6 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat, MarkdownVariant, PopoStatus, SourceMap } from '@/types/file'
+import type { FileItem, ExportFormat, FolderItem, MarkdownVariant, PopoStatus, SourceMap } from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -8,6 +8,7 @@ export interface FileListParams {
   page_size: number
   search?: string
   status?: string
+  folder_id?: string
 }
 
 // 文件列表响应
@@ -39,6 +40,10 @@ export interface DownloadUrlResponse {
   url: string
 }
 
+export interface FolderListResponse {
+  folders: FolderItem[]
+}
+
 // 文件 API
 export const filesApi = {
   /**
@@ -46,6 +51,45 @@ export const filesApi = {
    */
   getFiles(params: FileListParams) {
     return api.get<FileListResponse>('/files', { params })
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取文件夹列表
+   */
+  getFolders() {
+    return api.get<FolderListResponse>('/folders')
+      .then(res => res.data)
+  },
+
+  /**
+   * 创建文件夹
+   */
+  createFolder(name: string) {
+    return api.post<FolderItem>('/folders', { name })
+      .then(res => res.data)
+  },
+
+  /**
+   * 重命名文件夹
+   */
+  renameFolder(folderId: number, name: string) {
+    return api.patch<FolderItem>(`/folders/${folderId}`, { name })
+      .then(res => res.data)
+  },
+
+  /**
+   * 删除文件夹
+   */
+  deleteFolder(folderId: number) {
+    return api.delete(`/folders/${folderId}`)
+  },
+
+  /**
+   * 移动文件到文件夹
+   */
+  moveFileToFolder(fileId: string, folderId: number | null) {
+    return api.patch<FileItem>(`/files/${fileId}/folder`, { folder_id: folderId })
       .then(res => res.data)
   },
 

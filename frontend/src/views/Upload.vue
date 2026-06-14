@@ -63,7 +63,7 @@
 
         <div v-if="uploadResultMessage && !uploading" class="upload-result">
           <span>{{ uploadResultMessage }}</span>
-          <el-button type="primary" link @click="router.push('/files')">查看文件</el-button>
+          <el-button type="primary" link @click="openFiles">查看文件</el-button>
         </div>
 
         <div class="file-list">
@@ -133,7 +133,7 @@ import { computed, ref } from 'vue'
 import { UploadFilled, Document, Close, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { UploadInstance } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { filesApi } from '@/api/files'
 import { formatFileSize } from '@/utils/format'
 import { getUploadStatusText } from '@/utils/status'
@@ -153,6 +153,12 @@ const uploadProgress = ref(0)
 const uploadResultMessage = ref('')
 const uploadRef = ref<UploadInstance>()
 const router = useRouter()
+const route = useRoute()
+
+const selectedFolderId = computed(() => {
+  const folderId = route.query.folder_id
+  return typeof folderId === 'string' && folderId ? folderId : ''
+})
 
 const pendingUploadCount = computed(() => fileList.value.filter(file => file.status !== 'success').length)
 const uploadButtonText = computed(() => {
@@ -224,6 +230,11 @@ const handleFileRemove = (file: UploadFile, index?: number) => {
   }
 }
 
+const openFiles = () => {
+  const query = selectedFolderId.value ? { folder_id: selectedFolderId.value } : undefined
+  router.push({ path: '/files', query })
+}
+
 const handleUpload = async () => {
   const filesToUpload = fileList.value.filter(file => file.status !== 'success' && file.raw)
   if (filesToUpload.length === 0) {
@@ -244,6 +255,9 @@ const handleUpload = async () => {
         formData.append('files', file.raw)
       }
     })
+    if (selectedFolderId.value && selectedFolderId.value !== 'none') {
+      formData.append('folder_id', selectedFolderId.value)
+    }
 
     const result = await filesApi.uploadFiles(formData, progress => {
       uploadProgress.value = progress

@@ -2,7 +2,7 @@ import gc
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from app.api import auth_router, upload_router, files_router, parsed_router, settings_router, health_router
+from app.api import auth_router, upload_router, files_router, folders_router, parsed_router, settings_router, health_router
 from app.api import stats
 from contextlib import asynccontextmanager
 
@@ -33,6 +33,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(upload_router, prefix="/api", tags=["upload"])
 app.include_router(auth_router, prefix="/api", tags=["auth"])
 app.include_router(files_router, prefix="/api", tags=["files"])
+app.include_router(folders_router, prefix="/api", tags=["folders"])
 app.include_router(parsed_router, prefix="/api", tags=["parsed"])
 app.include_router(settings_router, prefix="/api", tags=["settings"])
 app.include_router(health_router, prefix="/api", tags=["health"])

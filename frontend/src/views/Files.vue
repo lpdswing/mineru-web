@@ -1,6 +1,57 @@
 <template>
   <div class="files-root">
-    <div class="files-container">
+    <div class="files-layout">
+      <aside class="folder-sidebar">
+        <div class="folder-header">
+          <span class="folder-title">文件夹</span>
+          <el-button class="folder-add" link @click="createFolder">
+            <el-icon><Plus /></el-icon>
+          </el-button>
+        </div>
+        <button
+          class="folder-item"
+          :class="{ active: params.folderId === '' }"
+          @click="selectFolder('')"
+        >
+          <el-icon><FolderOpened /></el-icon>
+          <span>全部文件</span>
+        </button>
+        <button
+          class="folder-item"
+          :class="{ active: params.folderId === 'none' }"
+          @click="selectFolder('none')"
+        >
+          <el-icon><FolderIcon /></el-icon>
+          <span>未分类</span>
+        </button>
+        <div class="folder-list">
+          <div
+            v-for="folder in folders"
+            :key="folder.id"
+            class="folder-row"
+            :class="{ active: params.folderId === String(folder.id) }"
+            @click="selectFolder(String(folder.id))"
+          >
+            <div class="folder-row-main">
+              <el-icon><FolderIcon /></el-icon>
+              <span class="folder-name">{{ folder.name }}</span>
+            </div>
+            <el-dropdown trigger="click" @command="(command: string) => handleFolderCommand(command, folder)">
+              <el-button class="folder-more" link @click.stop>
+                <el-icon><MoreFilled /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+      </aside>
+
+      <div class="files-container">
       <!-- 页面头部 -->
       <div class="page-header">
         <div class="header-left">
@@ -32,7 +83,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-button type="primary" @click="$router.push('/upload')">
+          <el-button type="primary" @click="openUpload">
             <el-icon><Upload /></el-icon>
             <span>上传文件</span>
           </el-button>
@@ -137,7 +188,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="220">
+          <el-table-column label="操作" width="270">
             <template #default="{ row }">
               <div class="action-cell">
                 <el-button class="action-link" link @click="openPreview(row)">查看</el-button>
@@ -161,6 +212,24 @@
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
+                <el-dropdown @command="(folderId: number | null) => moveFile(row, folderId)">
+                  <el-button class="action-link" link>
+                    移动 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item :command="null" :disabled="!row.folder_id">未分类</el-dropdown-item>
+                      <el-dropdown-item
+                        v-for="folder in folders"
+                        :key="folder.id"
+                        :command="folder.id"
+                        :disabled="row.folder_id === folder.id"
+                      >
+                        {{ folder.name }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </template>
           </el-table-column>
@@ -169,7 +238,7 @@
         <!-- 空状态 -->
         <div v-else-if="!loading" class="empty-state">
           <el-empty :description="emptyDescription">
-            <el-button type="primary" @click="$router.push('/upload')">
+            <el-button type="primary" @click="openUpload">
               <el-icon><Upload /></el-icon>
               上传文件
             </el-button>
@@ -191,15 +260,16 @@
           layout="total, sizes, prev, pager, next"
         />
       </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
-import { Upload, Delete, Search, Download, ArrowDown } from '@element-plus/icons-vue'
+import { Upload, Delete, Search, Download, ArrowDown, Folder as FolderIcon, FolderOpened, MoreFilled, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import JSZip from 'jszip'
 import axios from 'axios'
 import { filesApi } from '@/api/files'
@@ -210,10 +280,11 @@ import {
   getBackendIcon,
   getBackendColor
 } from '@/utils/status'
-import type { FileItem, ExportFormat } from '@/types/file'
+import type { FileItem, ExportFormat, FolderItem } from '@/types/file'
 import { ExportFormatNames } from '@/types/file'
 
 const files = ref<FileItem[]>([])
+const folders = ref<FolderItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const listLoadError = ref(false)
@@ -227,7 +298,8 @@ const params = reactive({
   page: 1,
   pageSize: 10,
   search: '',
-  status: ''
+  status: '',
+  folderId: ''
 })
 
 const exportingId = ref<string>('')
@@ -235,12 +307,13 @@ const batchExporting = ref(false)
 const batchDeleting = ref(false)
 const multipleSelection = ref<FileItem[]>([])
 const router = useRouter()
+const route = useRoute()
 
 const hasParsingFiles = computed(() => files.value.some(f => f.status === 'parsing'))
 const selectedExportableFiles = computed(() => multipleSelection.value.filter(file => file.status === 'parsed'))
 const emptyDescription = computed(() => {
   if (listLoadError.value) return '文件列表加载失败'
-  if (params.search || params.status) return '没有匹配的文件'
+  if (params.search || params.status || params.folderId) return '没有匹配的文件'
   return '暂无文件'
 })
 
@@ -372,6 +445,86 @@ const openPreview = (file: FileItem) => {
   })
 }
 
+const openUpload = () => {
+  const query = params.folderId ? { folder_id: params.folderId } : undefined
+  router.push({ path: '/upload', query })
+}
+
+const selectFolder = (folderId: string) => {
+  if (params.folderId === folderId) return
+  params.folderId = folderId
+}
+
+const fetchFolders = async () => {
+  const result = await filesApi.getFolders()
+  folders.value = result.folders
+}
+
+const createFolder = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPattern: /^(?!\s*$).{1,128}$/,
+      inputErrorMessage: '请输入 1-128 个字符'
+    })
+    const folder = await filesApi.createFolder(value)
+    folders.value = [...folders.value, folder]
+    params.folderId = String(folder.id)
+    ElMessage.success('文件夹已创建')
+  } catch (e) {}
+}
+
+const renameFolder = async (folder: FolderItem) => {
+  try {
+    const { value } = await ElMessageBox.prompt('文件夹名称', '重命名文件夹', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: folder.name,
+      inputPattern: /^(?!\s*$).{1,128}$/,
+      inputErrorMessage: '请输入 1-128 个字符'
+    })
+    const updated = await filesApi.renameFolder(folder.id, value)
+    folders.value = folders.value.map(item => item.id === updated.id ? updated : item)
+    ElMessage.success('文件夹已重命名')
+  } catch (e) {}
+}
+
+const deleteFolder = async (folder: FolderItem) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除文件夹“${folder.name}”吗？文件会移回未分类。`, '删除文件夹', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await filesApi.deleteFolder(folder.id)
+    folders.value = folders.value.filter(item => item.id !== folder.id)
+    if (params.folderId === String(folder.id)) {
+      params.folderId = ''
+    } else {
+      fetchFiles()
+    }
+    ElMessage.success('文件夹已删除')
+  } catch (e) {}
+}
+
+const handleFolderCommand = (command: string, folder: FolderItem) => {
+  if (command === 'rename') {
+    renameFolder(folder)
+  } else if (command === 'delete') {
+    deleteFolder(folder)
+  }
+}
+
+const moveFile = async (file: FileItem, folderId: number | null) => {
+  if ((file.folder_id ?? null) === folderId) return
+  try {
+    await filesApi.moveFileToFolder(file.id, folderId)
+    ElMessage.success('文件已移动')
+    fetchFiles()
+  } catch (e) {}
+}
+
 const handleExport = async (file: FileItem, format: ExportFormat) => {
   if (!file || exportingId.value === file.id) return
   if (file.status !== 'parsed') {
@@ -439,7 +592,8 @@ const pollFiles = async () => {
       page: params.page,
       page_size: params.pageSize,
       search: params.search,
-      status: params.status
+      status: params.status,
+      folder_id: params.folderId
     })
     updateFiles(result.files)
     total.value = result.total
@@ -453,7 +607,8 @@ const fetchFiles = async () => {
       page: params.page,
       page_size: params.pageSize,
       search: params.search,
-      status: params.status
+      status: params.status,
+      folder_id: params.folderId
     })
     files.value = result.files
     total.value = result.total
@@ -607,7 +762,11 @@ const scheduleSearch = () => {
 }
 
 onMounted(() => {
-  fetchFiles().then(() => {
+  const folderId = route.query.folder_id
+  if (typeof folderId === 'string') {
+    params.folderId = folderId
+  }
+  Promise.all([fetchFolders(), fetchFiles()]).then(() => {
     startPolling()
   })
 })
@@ -617,8 +776,15 @@ onUnmounted(() => {
   clearSearchTimer()
 })
 
-watch([() => params.search, () => params.status], () => {
+watch([() => params.search, () => params.status, () => params.folderId], () => {
   scheduleSearch()
+})
+
+watch(() => route.query.folder_id, (folderId) => {
+  const nextFolderId = typeof folderId === 'string' ? folderId : ''
+  if (params.folderId !== nextFolderId) {
+    params.folderId = nextFolderId
+  }
 })
 
 watch([() => params.page, () => params.pageSize], () => {
@@ -643,6 +809,116 @@ watch(hasParsingFiles, (hasParsing) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.files-layout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.folder-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 4px;
+}
+
+.folder-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.folder-add {
+  color: var(--text-secondary) !important;
+}
+
+.folder-add:hover {
+  color: var(--primary-color) !important;
+}
+
+.folder-item,
+.folder-row {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.folder-item:hover,
+.folder-row:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.folder-item.active,
+.folder-row.active {
+  background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-primary));
+  color: var(--primary-color);
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.folder-row {
+  justify-content: space-between;
+}
+
+.folder-row-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-more {
+  color: var(--text-muted) !important;
+  padding: 0 !important;
+  opacity: 0;
+}
+
+.folder-row:hover .folder-more,
+.folder-row.active .folder-more {
+  opacity: 1;
 }
 
 .files-container {
@@ -883,6 +1159,16 @@ watch(hasParsingFiles, (hasParsing) => {
 @media (max-width: 992px) {
   .files-root {
     padding: 20px 16px;
+  }
+
+  .files-layout {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .folder-sidebar {
+    width: 100%;
+    max-height: 220px;
   }
   
   .page-header {
