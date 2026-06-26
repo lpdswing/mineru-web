@@ -160,6 +160,7 @@ docker compose --env-file .env -f docker-compose.yml -f docker-compose.gpu.local
 - 构建阶段安装 `mineru[core]==3.3.1`。
 - 构建阶段执行 `mineru-models-download -m all` 下载模型。
 - 默认启动命令使用 `mineru-router --local-gpus auto`。
+- `docker-compose.yml` 会把 `backend/mineru_api_patch` 挂载到 `/app/mineru_api_patch`，运行时 patch 更新后重启 `mineru-router` 即可生效，不需要为 patch 变更重打 MinerU 镜像。
 
 如果宿主机 CUDA 驱动不兼容默认 base image，可以按 Dockerfile 注释切换到 `vllm/vllm-openai:v0.21.0-cu129` 后重新构建 parser 镜像。
 

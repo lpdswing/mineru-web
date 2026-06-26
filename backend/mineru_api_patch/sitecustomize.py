@@ -11,6 +11,8 @@ import builtins
 import json
 import os
 import sys
+import threading
+import time
 import zipfile
 from pathlib import Path
 from types import ModuleType
@@ -19,6 +21,19 @@ from typing import Any
 
 _PATCHED = False
 _ORIGINAL_IMPORT = builtins.__import__
+_INCOMPATIBLE_LOGGED: set[str] = set()
+
+
+def _module_label(module: ModuleType) -> str:
+    spec = getattr(module, "__spec__", None)
+    spec_name = getattr(spec, "name", None)
+    if spec_name and spec_name != getattr(module, "__name__", ""):
+        return f"{module.__name__} ({spec_name})"
+    return getattr(module, "__name__", "<unknown>")
+
+
+def _log(level: str, message: str) -> None:
+    print(f"### MINERU-WEB-PAGES-PATCH ### {level}: {message}", file=sys.stderr, flush=True)
 
 
 def _page_heading(page_info: dict[str, Any], fallback_index: int) -> str:
@@ -76,15 +91,31 @@ def _ensure_pages_markdown(parse_dir: str, pdf_name: str) -> Path | None:
     return pages_path
 
 
-def _patch_fast_api(module: ModuleType) -> None:
+def _patch_fast_api(module: ModuleType, *, log_missing: bool = False) -> None:
     global _PATCHED
-    if _PATCHED or getattr(module, "_mineru_web_pages_patch", False):
+    if getattr(module, "_mineru_web_pages_patch", False):
         return
 
     original_create_result_zip = getattr(module, "create_result_zip", None)
     get_parse_dir = getattr(module, "get_parse_dir", None)
     build_zip_arcname = getattr(module, "build_zip_arcname", None)
     if not original_create_result_zip or not get_parse_dir or not build_zip_arcname:
+        module_label = _module_label(module)
+        if log_missing and module_label not in _INCOMPATIBLE_LOGGED:
+            missing = [
+                name
+                for name, value in (
+                    ("create_result_zip", original_create_result_zip),
+                    ("get_parse_dir", get_parse_dir),
+                    ("build_zip_arcname", build_zip_arcname),
+                )
+                if not value
+            ]
+            _log(
+                "WARNING",
+                f"patch not applied to {module_label}; missing MinerU hook(s): {', '.join(missing)}",
+            )
+            _INCOMPATIBLE_LOGGED.add(module_label)
         return
 
     def create_result_zip_with_pages(
@@ -140,12 +171,38 @@ def _patch_fast_api(module: ModuleType) -> None:
     module.create_result_zip = create_result_zip_with_pages
     module._mineru_web_pages_patch = True
     _PATCHED = True
+    _log("INFO", f"patched create_result_zip in {_module_label(module)}")
 
 
-def _try_patch_loaded_fast_api() -> None:
-    module = sys.modules.get("mineru.cli.fast_api")
-    if module:
-        _patch_fast_api(module)
+def _fast_api_modules() -> list[ModuleType]:
+    modules = [sys.modules.get("mineru.cli.fast_api")]
+    main_module = sys.modules.get("__main__")
+    main_spec = getattr(main_module, "__spec__", None)
+    if getattr(main_spec, "name", None) == "mineru.cli.fast_api":
+        modules.append(main_module)
+    return [module for module in modules if module]
+
+
+def _try_patch_loaded_fast_api(*, log_missing: bool = False) -> None:
+    for module in _fast_api_modules():
+        _patch_fast_api(module, log_missing=log_missing)
+
+
+def _watch_fast_api_main() -> None:
+    saw_fast_api_module = False
+    for _ in range(300):
+        if _fast_api_modules():
+            saw_fast_api_module = True
+        _try_patch_loaded_fast_api()
+        time.sleep(0.1)
+    if saw_fast_api_module and not _PATCHED:
+        _try_patch_loaded_fast_api(log_missing=True)
+        _log("WARNING", "patch watcher expired before MinerU fast_api create_result_zip was patched")
+
+
+def _start_fast_api_main_watcher() -> None:
+    thread = threading.Thread(target=_watch_fast_api_main, name="mineru-web-pages-patch", daemon=True)
+    thread.start()
 
 
 def _import_with_patch(name, globals=None, locals=None, fromlist=(), level=0):
@@ -158,3 +215,4 @@ def _import_with_patch(name, globals=None, locals=None, fromlist=(), level=0):
 if os.getenv("MINERU_WEB_DISABLE_PAGES_PATCH", "").lower() not in {"1", "true", "yes"}:
     builtins.__import__ = _import_with_patch
     _try_patch_loaded_fast_api()
+    _start_fast_api_main_watcher()
