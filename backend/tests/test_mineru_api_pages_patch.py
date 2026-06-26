@@ -3,6 +3,7 @@ import io
 import json
 import sys
 import zipfile
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
 
@@ -107,3 +108,50 @@ def test_pages_patch_renders_pages_with_backend_aware_mineru_renderer(monkeypatc
         ("vlm", "mm_md", "images", 0),
         ("vlm", "mm_md", "images", 2),
     ]
+
+
+def test_pages_patch_patches_fast_api_run_as_main(monkeypatch):
+    patch = load_patch_module(monkeypatch)
+    fake_main = ModuleType("__main__")
+    fake_main.__spec__ = ModuleSpec("__main__", loader=None)
+    fake_main.__spec__.name = "mineru.cli.fast_api"
+    fake_main.create_result_zip = lambda *args, **kwargs: "result.zip"
+    fake_main.get_parse_dir = lambda output_dir, pdf_name, backend, parse_method: output_dir
+    fake_main.build_zip_arcname = lambda pdf_name, parse_dir_arg, rel: f"{pdf_name}/{rel}"
+
+    monkeypatch.setitem(sys.modules, "__main__", fake_main)
+
+    patch._try_patch_loaded_fast_api()
+
+    assert getattr(fake_main, "_mineru_web_pages_patch", False) is True
+    assert fake_main.create_result_zip.__name__ == "create_result_zip_with_pages"
+
+
+def test_pages_patch_logs_success(capsys, monkeypatch):
+    patch = load_patch_module(monkeypatch)
+    fake_fast_api = ModuleType("mineru.cli.fast_api")
+    fake_fast_api.create_result_zip = lambda *args, **kwargs: "result.zip"
+    fake_fast_api.get_parse_dir = lambda output_dir, pdf_name, backend, parse_method: output_dir
+    fake_fast_api.build_zip_arcname = lambda pdf_name, parse_dir_arg, rel: f"{pdf_name}/{rel}"
+
+    patch._patch_fast_api(fake_fast_api)
+
+    captured = capsys.readouterr()
+    assert "### MINERU-WEB-PAGES-PATCH ###" in captured.err
+    assert "patched create_result_zip" in captured.err
+    assert "mineru.cli.fast_api" in captured.err
+
+
+def test_pages_patch_logs_incompatible_fast_api_once(capsys, monkeypatch):
+    patch = load_patch_module(monkeypatch)
+    fake_fast_api = ModuleType("mineru.cli.fast_api")
+
+    patch._patch_fast_api(fake_fast_api, log_missing=True)
+    patch._patch_fast_api(fake_fast_api, log_missing=True)
+
+    captured = capsys.readouterr()
+    assert "### MINERU-WEB-PAGES-PATCH ###" in captured.err
+    assert captured.err.count("patch not applied") == 1
+    assert "create_result_zip" in captured.err
+    assert "get_parse_dir" in captured.err
+    assert "build_zip_arcname" in captured.err

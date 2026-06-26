@@ -97,6 +97,9 @@ services:
       # configured *-http-client backends/server_url can work.
       - --allow-public-http-client
     volumes:
+      # Runtime patch is bind-mounted so page-aware Markdown fixes can be
+      # deployed with a container restart instead of rebuilding the MinerU image.
+      - ./backend/mineru_api_patch:/app/mineru_api_patch:ro
       - mineru_api_output:/output
     ulimits:
       memlock: -1
