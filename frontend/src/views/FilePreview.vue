@@ -114,8 +114,8 @@
       <!-- 预览内容区 -->
       <div class="preview-content">
         <!-- 原文件预览 -->
-        <div 
-          v-if="viewMode !== 'markdown' && markdownVariant !== 'compare'"
+        <div
+          v-if="viewMode !== 'markdown' && markdownVariant !== 'compare' && markdownVariant !== 'popo_tree'"
           class="preview-panel origin-panel"
           :class="{ 'full-width': viewMode === 'origin' }"
         >
@@ -168,14 +168,14 @@
         <div 
           v-if="viewMode !== 'origin'" 
           class="preview-panel markdown-panel"
-          :class="{ 'full-width': viewMode === 'markdown' || markdownVariant === 'compare' }"
+          :class="{ 'full-width': viewMode === 'markdown' || markdownVariant === 'compare' || markdownVariant === 'popo_tree' }"
         >
           <div class="panel-content">
             <div v-if="isPdf(currentFile?.filename)" class="pdf-review-bar">
               <div class="pdf-review-title">
-                <span>{{ markdownVariant === 'compare' ? 'OCR / Popo 对照' : 'Markdown 预览' }}</span>
+                <span>{{ pdfReviewTitle }}</span>
                 <small>
-                  {{ markdownVariant === 'compare' ? '原始 OCR 结果 / Popo 增强结果' : `Page ${activeSourcePage} / ${pageSections.length || 0}` }}
+                  {{ markdownVariant === 'compare' ? '原始 OCR 结果 / Popo 增强结果' : markdownVariant === 'popo_tree' ? 'Popo 文档结构树' : `Page ${activeSourcePage} / ${pageSections.length || 0}` }}
                 </small>
               </div>
               <div class="pdf-review-actions">
@@ -188,9 +188,9 @@
                 >
                   {{ name }}
                 </button>
-                <span v-if="markdownVariant !== 'compare'" class="source-trace-chip">{{ sourceTraceLabel }}</span>
+                <span v-if="markdownVariant !== 'compare' && markdownVariant !== 'popo_tree'" class="source-trace-chip">{{ sourceTraceLabel }}</span>
               </div>
-              <div v-if="markdownVariant !== 'compare' && sourceBlockTotal" class="source-type-filters">
+              <div v-if="markdownVariant !== 'compare' && markdownVariant !== 'popo_tree' && sourceBlockTotal" class="source-type-filters">
                 <button
                   v-for="option in sourceTypeFilterOptions"
                   :key="option.key"
@@ -250,6 +250,16 @@
             </div>
             <el-empty
               v-else-if="markdownVariant === 'popo' && !parsedContent"
+              :description="popoEmptyDescription"
+              :image-size="100"
+            />
+            <PopoTreeView
+              v-else-if="markdownVariant === 'popo_tree' && popoTree"
+              :tree="popoTree"
+              :filename="downloadStem"
+            />
+            <el-empty
+              v-else-if="markdownVariant === 'popo_tree'"
               :description="popoEmptyDescription"
               :image-size="100"
             />
@@ -328,12 +338,14 @@ import * as XLSX from 'xlsx'
 import api from '@/api'
 import { filesApi } from '@/api/files'
 import PdfSourceViewer from '@/components/PdfSourceViewer.vue'
+import PopoTreeView from '@/components/PopoTreeView.vue'
 import {
   ExportFormatNames,
   type ExportFormat,
   type MarkdownVariant,
   type PopoStatus,
   type PopoStatusValue,
+  type PopoTreeNode,
   type SourceBlock,
   type SourceMap
 } from '@/types/file'
@@ -385,7 +397,7 @@ interface PdfSourceViewerRef {
   scrollToBlock: (pageNumber: number, blockId: string) => Promise<void> | void
 }
 
-type MarkdownViewVariant = MarkdownVariant | 'compare'
+type MarkdownViewVariant = MarkdownVariant | 'compare' | 'popo_tree'
 
 const sidebarCollapsed = ref(false)
 const allFiles = ref<FileItem[]>([])
@@ -488,6 +500,7 @@ const selectFile = (file: FileItem) => {
   page.value = 1
   markdownVariant.value = preferredMarkdownVariant(file)
   popoStatus.value = null
+  popoTree.value = null
   parsedContent.value = ''
   markdownLoadError.value = ''
   originLoadError.value = ''
@@ -522,6 +535,12 @@ const hasMore = ref(true)
 let markdownRequestSeq = 0
 const markdownVariant = ref<MarkdownViewVariant>('markdown')
 const popoStatus = ref<PopoStatus | null>(null)
+const popoTree = ref<PopoTreeNode | null>(null)
+const downloadStem = computed(() => {
+  const name = currentFile.value?.filename || 'document'
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
+})
 const compareMarkdownContent = ref('')
 const comparePopoContent = ref('')
 const comparePopoStatus = ref<PopoStatus | null>(null)
@@ -529,10 +548,12 @@ const markdownVariantNames: Record<MarkdownViewVariant, string> = {
   markdown: '原始 Markdown',
   markdown_page: '按页 Markdown',
   popo: 'Popo 增强',
+  popo_tree: '结构树',
   compare: '对比'
 }
-const pdfMarkdownVariantNames: Record<'markdown_page' | 'compare', string> = {
+const pdfMarkdownVariantNames: Record<'markdown_page' | 'popo_tree' | 'compare', string> = {
   markdown_page: '溯源阅读',
+  popo_tree: '结构树',
   compare: 'OCR-Popo 对照'
 }
 const popoStatusNames: Record<PopoStatusValue, string> = {
@@ -545,6 +566,11 @@ const popoStatusNames: Record<PopoStatusValue, string> = {
 const popoEmptyDescription = computed(() => {
   if (!popoStatus.value) return 'Popo 结果暂不可用'
   return popoStatus.value.message || popoStatusNames[popoStatus.value.status]
+})
+const pdfReviewTitle = computed(() => {
+  if (markdownVariant.value === 'compare') return 'OCR / Popo 对照'
+  if (markdownVariant.value === 'popo_tree') return '结构树'
+  return 'Markdown 预览'
 })
 const comparePopoEmptyDescription = computed(() => {
   if (!comparePopoStatus.value) return 'Popo 结果暂不可用'
@@ -779,6 +805,10 @@ const fetchParsedContent = async () => {
     await fetchCompareContent()
     return
   }
+  if (markdownVariant.value === 'popo_tree') {
+    await fetchPopoTree()
+    return
+  }
   const fileId = currentFile.value.id
   const variant = markdownVariant.value as MarkdownVariant
   const seq = ++markdownRequestSeq
@@ -821,6 +851,30 @@ const fetchPopoStatus = async (
   } catch (e) {
     if (!isLatestMarkdownRequest(seq, fileId, variant)) return
     popoStatus.value = { status: 'not_available', message: '' }
+  }
+}
+
+const fetchPopoTree = async () => {
+  if (!currentFile.value) return
+  const fileId = currentFile.value.id
+  const variant: MarkdownViewVariant = 'popo_tree'
+  const seq = ++markdownRequestSeq
+  loading.value = true
+  markdownLoadError.value = ''
+  popoTree.value = null
+  popoStatus.value = null
+  try {
+    const data = await filesApi.getPopoTree(fileId)
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
+    popoTree.value = data || null
+  } catch (e) {
+    if (!isLatestMarkdownRequest(seq, fileId, variant)) return
+    popoTree.value = null
+    await fetchPopoStatus(fileId, seq, variant)
+  } finally {
+    if (isLatestMarkdownRequest(seq, fileId, variant)) {
+      loading.value = false
+    }
   }
 }
 
