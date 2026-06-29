@@ -1,6 +1,6 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat, FolderItem, MarkdownVariant, PopoStatus, SourceMap } from '@/types/file'
+import type { FileItem, ExportFormat, FolderItem, MarkdownVariant, PopoStatus, PopoTreeNode, SourceMap } from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -145,6 +145,14 @@ export const filesApi = {
    */
   getPopoStatus(fileId: string) {
     return api.get<PopoStatus>(`/files/${fileId}/popo/status`)
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取 Popo 文档结构树
+   */
+  getPopoTree(fileId: string) {
+    return api.get<PopoTreeNode>(`/files/${fileId}/popo/tree`)
       .then(res => res.data)
   },
 

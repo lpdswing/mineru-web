@@ -74,6 +74,18 @@ export interface SourceMap {
   pages: SourcePage[]
 }
 
+// Popo 后处理生成的文档结构树节点
+export interface PopoTreeNode {
+  type: string
+  title?: string
+  metadata?: string
+  content?: string
+  level?: number
+  location?: Array<{ bbox?: number[]; page?: number }>
+  block_ids?: number[]
+  children?: PopoTreeNode[]
+}
+
 // 导出格式显示名称
 export const ExportFormatNames: Record<ExportFormat, string> = {
   [ExportFormats.MARKDOWN]: 'Markdown',
