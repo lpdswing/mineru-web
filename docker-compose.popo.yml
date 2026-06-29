@@ -16,6 +16,7 @@ services:
       - POPO_OPENAI_BASE_URL=${POPO_OPENAI_BASE_URL:-}
       - POPO_OPENAI_API_KEY=${POPO_OPENAI_API_KEY:-dummy}
       - POPO_OPENAI_MODEL=${POPO_OPENAI_MODEL:-Popo}
+      - POPO_OPENAI_MAX_TOKENS=${POPO_OPENAI_MAX_TOKENS:-1024}
     volumes:
       - popo_workspace:/workspace
       - ${POPO_ARTIFACT_SOURCE:-mineru_api_output}:/mineru-output:ro

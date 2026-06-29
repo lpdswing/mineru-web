@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.pipeline import parse_minio_endpoint
 from app.pipeline import PopoPipeline
+from app.pipeline import render_popo_markdown
 
 
 def test_parse_minio_endpoint_keeps_bare_host_port():
@@ -36,14 +37,16 @@ def test_run_omits_model_json_from_upstream_mineru_input(tmp_path):
         assert not (vlm_dir / f"{doc_id}_model.json").exists()
 
         json_dir = job_dir / "outputs" / "build_tree" / "mineru"
-        markdown_dir = job_dir / "outputs" / "build_tree_txt" / "mineru"
         json_dir.mkdir(parents=True, exist_ok=True)
-        markdown_dir.mkdir(parents=True, exist_ok=True)
-        (json_dir / f"{doc_id}.json").write_text("{}", encoding="utf-8")
-        (markdown_dir / f"{doc_id}.txt").write_text("content", encoding="utf-8")
+        (json_dir / f"{doc_id}.json").write_text(
+            '{"type":"root","children":[{"type":"text","title":"Default Title","content":"full content"}]}',
+            encoding="utf-8",
+        )
+
+    uploaded = {}
 
     def upload_file(bucket, object_name, source, content_type):
-        return None
+        uploaded[object_name] = source.read_text(encoding="utf-8")
 
     pipeline.write_status = write_status
     pipeline.download_artifact = download_artifact
@@ -73,6 +76,7 @@ def test_run_omits_model_json_from_upstream_mineru_input(tmp_path):
         "doc/auto/doc_content_list.json",
         "doc.pdf",
     ]
+    assert uploaded["doc_popo.md"] == "full content\n"
 
 
 def test_run_downloads_source_pdf_for_upstream_inference(tmp_path):
@@ -96,6 +100,9 @@ def test_run_downloads_source_pdf_for_upstream_inference(tmp_path):
         pdf_map = job_dir / "pdf-map.json"
         assert source_pdf.exists()
         assert pdf_map.exists()
+        json_dir = job_dir / "outputs" / "build_tree" / "mineru"
+        json_dir.mkdir(parents=True, exist_ok=True)
+        (json_dir / f"{doc_id}.json").write_text('{"type":"root"}', encoding="utf-8")
 
     def upload_file(bucket, object_name, source, content_type):
         source.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +132,43 @@ def test_run_downloads_source_pdf_for_upstream_inference(tmp_path):
     pipeline.run(request)
 
     assert ("doc.pdf", "doc.pdf") in downloaded
+
+
+def test_render_popo_markdown_uses_full_json_tree_content(tmp_path):
+    tree_path = tmp_path / "doc.json"
+    markdown_path = tmp_path / "doc.md"
+    tree_path.write_text(
+        """
+        {
+          "type": "root",
+          "children": [
+            {
+              "type": "text",
+              "title": "Default Title",
+              "content": "第一段完整内容<|txt_split|>第二段<|txt_contd|>继续",
+              "children": []
+            },
+            {
+              "type": "text",
+              "title": "章节标题",
+              "level": 2,
+              "content": "标题下的内容",
+              "children": []
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    render_popo_markdown(tree_path, markdown_path)
+
+    assert markdown_path.read_text(encoding="utf-8") == (
+        "第一段完整内容\n\n"
+        "第二段继续\n\n"
+        "## 章节标题\n\n"
+        "标题下的内容\n"
+    )
 
 
 def test_stage_artifact_copies_from_local_artifact_root_before_minio(tmp_path):

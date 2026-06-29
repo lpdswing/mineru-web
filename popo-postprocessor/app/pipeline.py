@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from minio import Minio
@@ -16,6 +17,57 @@ def parse_minio_endpoint(endpoint: str) -> tuple[str, bool]:
     if parsed.scheme in {"http", "https"}:
         return parsed.netloc, parsed.scheme == "https"
     return endpoint, os.getenv("MINIO_SECURE", "false").lower() == "true"
+
+
+def render_popo_markdown(tree_path: Path, markdown_path: Path) -> None:
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    lines: list[str] = []
+
+    def append_content(content: Any) -> None:
+        text = str(content or "").strip()
+        if not text:
+            return
+
+        paragraphs = text.replace("<|txt_contd|>", "").split("<|txt_split|>")
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if paragraph:
+                lines.append(paragraph)
+                lines.append("")
+
+    def append_node(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+
+        node_type = str(node.get("type") or "")
+        title = str(node.get("title") or "").strip()
+
+        if node_type != "root":
+            if title and title not in {"Default Title", "N/A"}:
+                level = _markdown_heading_level(node.get("level"))
+                lines.append(f"{'#' * level} {title}")
+                lines.append("")
+            append_content(node.get("content"))
+
+        for child in node.get("children") or []:
+            append_node(child)
+
+    append_node(tree)
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def _markdown_heading_level(value: Any) -> int:
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        return 2
+    if level < 1:
+        return 2
+    return min(level, 6)
 
 
 class PopoPipeline:
@@ -69,9 +121,8 @@ class PopoPipeline:
             self.run_popo_commands(job_dir, request.prefix)
 
             json_path = job_dir / "outputs" / "build_tree" / "mineru" / f"{request.prefix}.json"
-            markdown_path = (
-                job_dir / "outputs" / "build_tree_txt" / "mineru" / f"{request.prefix}.txt"
-            )
+            markdown_path = job_dir / "outputs" / "markdown" / "mineru" / f"{request.prefix}.md"
+            render_popo_markdown(json_path, markdown_path)
 
             self.upload_file(
                 request.bucket,
@@ -192,6 +243,7 @@ class PopoPipeline:
             cwd=self.repo_dir,
             check=True,
         )
+        self.log_inference_candidate_summary(job_dir, doc_id)
         subprocess.run(
             [
                 "python3",
@@ -224,3 +276,62 @@ class PopoPipeline:
             cwd=self.repo_dir,
             check=True,
         )
+
+    def log_inference_candidate_summary(self, job_dir: Path, doc_id: str) -> None:
+        doc_name = Path(doc_id).name
+        script = f"""
+import json
+import sys
+from pathlib import Path
+
+repo_dir = Path({str(self.repo_dir)!r})
+input_path = Path({str(job_dir / "outputs" / "label_normalization" / "mineru" / f"{doc_id}.json")!r})
+sys.path.insert(0, str(repo_dir / "post_processing"))
+sys.path.insert(0, str(repo_dir / "data_engine"))
+
+from inference import (
+    adaptive_chunk,
+    add_contd,
+    add_image,
+    add_title,
+    filter_contd,
+    filter_image,
+    filter_table_merge,
+    filter_title,
+    parse_string_notype,
+    parse_string_type,
+)
+
+payload = json.loads(input_path.read_text(encoding="utf-8"))
+pages = payload.get("pages", payload)
+doc_blocks = []
+idx = 1
+for page_num, blocks in pages.items():
+    for block in blocks:
+        block = dict(block)
+        block["page"] = int(page_num)
+        block["id"] = idx
+        block.setdefault("contd", -1)
+        block.setdefault("level", -1)
+        block.setdefault("image", -1)
+        idx += 1
+        doc_blocks.append(block)
+
+contd = filter_contd(doc_blocks)
+title = filter_title(doc_blocks)
+image, _ = filter_image(doc_blocks)
+table_merge = filter_table_merge(doc_blocks)
+_, contd_chunks = adaptive_chunk(parse_string_notype(add_contd(contd)))
+_, title_chunks = adaptive_chunk(parse_string_notype(add_title(title)))
+_, image_chunks = adaptive_chunk(parse_string_type(add_image(image)))
+print(
+    "### MINERU-WEB-POPO ### candidates "
+    f"doc={doc_name!r} blocks={{len(doc_blocks)}} "
+    f"contd={{len(contd)}} contd_chunks={{len(contd_chunks)}} "
+    f"title={{len(title)}} title_chunks={{len(title_chunks)}} "
+    f"image={{len(image)}} image_chunks={{len(image_chunks)}} "
+    f"table_merge={{len(table_merge)}}",
+    flush=True,
+)
+"""
+        subprocess.run(["python3", "-c", script], cwd=self.repo_dir, check=True)
