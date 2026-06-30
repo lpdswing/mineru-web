@@ -55,6 +55,10 @@
                   <el-option label="西里尔语 (cyrillic)" value="cyrillic" />
                   <el-option label="天城文 (devanagari)" value="devanagari" />
                 </el-select>
+                <div class="form-tip">
+                  <el-icon><InfoFilled /></el-icon>
+                  <span>MinerU 3.4.0 起，英语 (en)、日语 (japan)、繁体中文 (chinese_cht)、拉丁语 (latin) 已并入 ch 模型识别，选择这些选项等同于 ch。</span>
+                </div>
               </el-form-item>
             </div>
           </div>
