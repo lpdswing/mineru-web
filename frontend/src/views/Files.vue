@@ -114,6 +114,7 @@
       <!-- 文件表格 -->
       <div class="table-wrapper">
         <el-table
+          ref="tableRef"
           :data="files"
           v-if="files && files.length > 0 && !loading"
           row-key="id"
@@ -307,6 +308,7 @@ const exportingId = ref<string>('')
 const batchExporting = ref(false)
 const batchDeleting = ref(false)
 const multipleSelection = ref<FileItem[]>([])
+const tableRef = ref<{ clearSelection: () => void } | null>(null)
 const router = useRouter()
 const route = useRoute()
 
@@ -684,6 +686,9 @@ const handleBatchDelete = async () => {
       } else {
         ElMessage.error('所有文件删除失败')
       }
+      // 清掉 el-table 的预留选中（reserve-selection 会保留已删除行的 key）
+      tableRef.value?.clearSelection()
+      multipleSelection.value = []
       fetchFiles()
     } finally {
       batchDeleting.value = false
