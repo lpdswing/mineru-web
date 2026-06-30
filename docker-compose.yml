@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: lpdswing/mineru-web-frontend:v3.3.1
+    image: lpdswing/mineru-web-frontend:v3.4.0
     ports:
       - "8088:80"
     environment:
@@ -12,7 +12,7 @@ services:
       - mineru-network
 
   backend:
-    image: lpdswing/mineru-web-backend:v3.3.1
+    image: lpdswing/mineru-web-backend:v3.4.0
     environment:
       - TZ=Asia/Shanghai
       - REDIS_HOST=redis
@@ -34,7 +34,7 @@ services:
       - mineru-network
 
   worker:
-    image: lpdswing/mineru-web-backend:v3.3.1
+    image: lpdswing/mineru-web-backend:v3.4.0
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     command: python3 run_worker.py
@@ -70,7 +70,7 @@ services:
       - mineru-network
 
   mineru-router:
-    image: lpdswing/mineru-web-mineru-api:v3.3.1
+    image: lpdswing/mineru-web-mineru-api:v3.4.0
     container_name: mineru-router
     restart: always
     ports:
