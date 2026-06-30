@@ -60,6 +60,7 @@ class FakeMinio:
             ("mds", "sample_pages.md"): b"# Pages",
             ("mds", "sample_popo.md"): b"# Popo",
             ("mds", "sample_popo_status.json"): b'{"status":"success","message":""}',
+            ("mds", "sample_popo.json"): b'{"type":"root","children":[{"type":"title","title":"\xe7\xab\xa0\xe8\x8a\x82"}]}',
         }
 
     def stat_object(self, bucket, path):
@@ -426,6 +427,60 @@ def test_popo_status_returns_status_json(monkeypatch):
     assert response.json() == {"status": "success", "message": ""}
     assert fake_minio.get_responses[0].closed is True
     assert fake_minio.get_responses[0].released is True
+
+
+def test_popo_tree_returns_parsed_json(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/tree",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "type": "root",
+        "children": [{"type": "title", "title": "章节"}],
+    }
+    assert fake_minio.get_calls == [("mds", "sample_popo.json")]
+
+
+def test_popo_tree_returns_404_when_artifact_missing(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=3,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_minio = FakeMinio()
+    del fake_minio.existing_objects[("mds", "sample_popo.json")]
+
+    app.dependency_overrides[get_db] = lambda: FakeDb(fake_file)
+    monkeypatch.setattr("app.api.parsed.get_buckets", lambda: ["mds"])
+    monkeypatch.setattr("app.api.parsed.minio_client", fake_minio)
+
+    try:
+        response = TestClient(app).get(
+            "/api/files/3/popo/tree",
+            headers={"X-User-Id": "u1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
 
 
 def test_popo_status_returns_not_available_when_artifact_missing(monkeypatch):

@@ -54,6 +54,10 @@ def _popo_status_path(file: FileModel) -> str:
     return f"{_artifact_stem(file)}_popo_status.json"
 
 
+def _popo_tree_path(file: FileModel) -> str:
+    return f"{_artifact_stem(file)}_popo.json"
+
+
 def _middle_json_candidates(file: FileModel) -> list[str]:
     stem = _artifact_stem(file)
     return [
@@ -519,6 +523,33 @@ def get_popo_status(
     except Exception as e:
         if _is_missing_object_error(e):
             return {"status": "not_available", "message": ""}
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/files/{file_id}/popo/tree")
+def get_popo_tree(
+    file_id: int,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """返回 Popo 后处理生成的文档结构树（{stem}_popo.json）。"""
+    file = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    buckets = get_buckets()
+    mds_bucket = buckets[0]
+
+    try:
+        content = _read_minio_object(mds_bucket, _popo_tree_path(file)).decode("utf-8")
+    except Exception as e:
+        if _is_missing_object_error(e):
+            raise HTTPException(status_code=404, detail="Popo 结构树不存在")
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
