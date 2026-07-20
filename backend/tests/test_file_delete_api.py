@@ -51,8 +51,9 @@ class FakeQuery:
 
 
 class FakeDb:
-    def __init__(self, file):
+    def __init__(self, file, commit_error=None):
         self.file = file
+        self.commit_error = commit_error
         self.parsed_deletes = 0
         self.deleted_files = []
         self.committed = False
@@ -72,6 +73,8 @@ class FakeDb:
         self.deleted_files.append(file)
 
     def commit(self):
+        if self.commit_error:
+            raise self.commit_error
         self.committed = True
 
     def rollback(self):
@@ -117,6 +120,7 @@ def test_delete_file_removes_original_and_parsed_minio_artifacts(monkeypatch):
         ("mds", "sample.md"),
         ("mds", "sample_pages.md"),
         ("mds", "sample_popo.md"),
+        ("mds", "sample_popo.json"),
         ("mds", "sample_popo_status.json"),
         ("mds", "sample_middle.json"),
         ("mds", "sample/auto/sample_middle.json"),
@@ -128,7 +132,7 @@ def test_delete_file_removes_original_and_parsed_minio_artifacts(monkeypatch):
     assert fake_db.rolled_back is False
 
 
-def test_delete_file_rolls_back_when_parsed_artifact_cleanup_fails(monkeypatch):
+def test_delete_file_returns_success_when_parsed_artifact_cleanup_fails(monkeypatch):
     fake_file = SimpleNamespace(
         id=7,
         user_id="u1",
@@ -143,12 +147,31 @@ def test_delete_file_rolls_back_when_parsed_artifact_cleanup_fails(monkeypatch):
 
     response = _delete_file(monkeypatch, fake_db, fake_minio)
 
+    assert response.status_code == 200
+    assert fake_db.parsed_deletes == 1
+    assert fake_db.deleted_files == [fake_file]
+    assert fake_db.committed is True
+    assert fake_db.rolled_back is False
+
+
+def test_delete_file_does_not_remove_minio_objects_when_database_commit_fails(monkeypatch):
+    fake_file = SimpleNamespace(
+        id=7,
+        user_id="u1",
+        filename="sample.pdf",
+        minio_path="uploads/sample.pdf",
+    )
+    fake_db = FakeDb(fake_file, commit_error=RuntimeError("database unavailable"))
+    fake_minio = FakeMinio(prefix_objects=["sample/images/page-1.png"])
+
+    response = _delete_file(monkeypatch, fake_db, fake_minio)
+
     assert response.status_code == 500
     assert "删除失败" in response.json()["detail"]
-    assert fake_db.parsed_deletes == 0
-    assert fake_db.deleted_files == []
     assert fake_db.committed is False
     assert fake_db.rolled_back is True
+    assert fake_minio.remove_calls == []
+    assert fake_minio.list_calls == []
 
 
 def test_delete_file_ignores_missing_minio_objects(monkeypatch):
@@ -164,6 +187,7 @@ def test_delete_file_ignores_missing_minio_objects(monkeypatch):
         ("mds", "sample.md"),
         ("mds", "sample_pages.md"),
         ("mds", "sample_popo.md"),
+        ("mds", "sample_popo.json"),
         ("mds", "sample_popo_status.json"),
         ("mds", "sample_middle.json"),
         ("mds", "sample/images/page-1.png"),
