@@ -132,7 +132,7 @@ def test_delete_file_removes_original_and_parsed_minio_artifacts(monkeypatch):
     assert fake_db.rolled_back is False
 
 
-def test_delete_file_returns_success_when_parsed_artifact_cleanup_fails(monkeypatch):
+def test_delete_file_continues_minio_cleanup_when_early_artifact_fails(monkeypatch):
     fake_file = SimpleNamespace(
         id=7,
         user_id="u1",
@@ -142,12 +142,23 @@ def test_delete_file_returns_success_when_parsed_artifact_cleanup_fails(monkeypa
     fake_db = FakeDb(fake_file)
     fake_minio = FakeMinio(
         prefix_objects=["sample/images/page-1.png"],
-        fail_on_remove={("mds", "sample/images/page-1.png")},
+        fail_on_remove={("mds", "sample.md")},
     )
 
     response = _delete_file(monkeypatch, fake_db, fake_minio)
 
     assert response.status_code == 200
+    assert fake_minio.list_calls == [("mds", "sample/", True)]
+    assert fake_minio.remove_calls == [
+        ("mineru-files", "uploads/sample.pdf"),
+        ("mds", "sample.md"),
+        ("mds", "sample_pages.md"),
+        ("mds", "sample_popo.md"),
+        ("mds", "sample_popo.json"),
+        ("mds", "sample_popo_status.json"),
+        ("mds", "sample_middle.json"),
+        ("mds", "sample/images/page-1.png"),
+    ]
     assert fake_db.parsed_deletes == 1
     assert fake_db.deleted_files == [fake_file]
     assert fake_db.committed is True

@@ -60,7 +60,7 @@ def _remove_minio_object(bucket: str, path: str) -> None:
     except Exception as exc:
         if _is_missing_minio_error(exc):
             return
-        raise
+        logger.warning("MinIO object cleanup failed for {}/{}: {}", bucket, path, str(exc))
 
 
 def _remove_minio_prefix(bucket: str, prefix: str) -> None:
@@ -70,7 +70,7 @@ def _remove_minio_prefix(bucket: str, prefix: str) -> None:
     except Exception as exc:
         if _is_missing_minio_error(exc):
             return
-        raise
+        logger.warning("MinIO prefix cleanup failed for {}/{}: {}", bucket, prefix, str(exc))
 
 
 def _remove_parsed_artifacts(minio_path: str) -> None:
@@ -228,11 +228,8 @@ def delete_file(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
-    try:
-        # 数据库提交成功后再清理 MinIO，避免数据库回滚时文件已经丢失
-        _remove_minio_object(MINIO_BUCKET, minio_path)
-        _remove_parsed_artifacts(minio_path)
-    except Exception as e:
-        logger.warning("MinIO cleanup failed for file {}: {}", file_id, str(e))
+    # 数据库提交成功后再清理 MinIO，单个对象失败不影响后续清理
+    _remove_minio_object(MINIO_BUCKET, minio_path)
+    _remove_parsed_artifacts(minio_path)
 
     return {"msg": "删除成功"}
