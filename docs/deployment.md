@@ -41,7 +41,7 @@ MINERU_API_HYBRID_EFFORT=high
 ```
 
 只有选择 `vlm-http-client` 或 `hybrid-http-client` 并接入外部 OpenAI 兼容服务时才需要 `SERVER_URL`。
-MinerU 3.4.0 的 hybrid backend 支持 `MINERU_API_HYBRID_EFFORT=high|medium`；默认 `high` 用于保持高精度和图片/图表分析，`medium` 更快。
+MinerU 3.4.0 及以上版本的 hybrid backend 支持 `MINERU_API_HYBRID_EFFORT=high|medium`；默认 `high` 用于保持高精度和图片/图表分析，`medium` 更快。
 
 ### Worker 并发
 
@@ -154,10 +154,10 @@ services:
 docker compose --env-file .env -f docker-compose.yml -f docker-compose.gpu.local.yml up -d
 ```
 
-`backend/mineru-api.Dockerfile` 按 MinerU 3.4.0 官方 Docker 部署思路维护，并用于发布 `linux/amd64` / `linux/arm64` 镜像：
+`backend/mineru-api.Dockerfile` 按 MinerU 3.4.4 官方 Docker 部署思路维护，并用于发布 `linux/amd64` / `linux/arm64` 镜像：
 
 - base image 使用 `vllm/vllm-openai:v0.21.0`。
-- 构建阶段安装 `mineru[core]==3.4.0`。
+- 构建阶段安装 `mineru[core]==3.4.4`。
 - 构建阶段执行 `mineru-models-download -m all` 下载模型。
 - 默认启动命令使用 `mineru-router --local-gpus auto`。
 - `docker-compose.yml` 会把 `backend/mineru_api_patch` 挂载到 `/app/mineru_api_patch`，运行时 patch 更新后重启 `mineru-router` 即可生效，不需要为 patch 变更重打 MinerU 镜像。
@@ -176,7 +176,7 @@ Mac 的 Docker 容器不能直接使用宿主机 MPS/MLX 推理能力，因此�
 
 ```bash
 PYTHONPATH="$PWD/backend/mineru_api_patch" MINERU_MODEL_SOURCE=modelscope \
-  uv run --python 3.13 --with 'mineru[all]==3.4.0' \
+  uv run --python 3.13 --with 'mineru[all]==3.4.4' \
   mineru-api --host 127.0.0.1 --port 18000 --allow-public-http-client
 ```
 
@@ -196,7 +196,7 @@ Mac compose 中：
 
 仓库不再维护 `download_models.py` 和 `mineru.example.json`。原因：
 
-- MinerU 3.4.0 官方提供 `mineru-models-download`。
+- MinerU 3.4.4 官方提供 `mineru-models-download`。
 - 该命令支持 `huggingface` / `modelscope` 和 `pipeline` / `vlm` / `all`。
 - 它会按官方格式准备模型和配置，减少本仓库维护模型路径的成本。
 
@@ -217,11 +217,11 @@ mineru-models-download -s huggingface -m all
 
 ## 版本和发布
 
-本项目版本号跟随兼容的 MinerU 版本。MinerU 3.4.0 对应本项目 `v3.4.0`：
+本项目版本号跟随兼容的 MinerU 版本。MinerU 3.4.4 对应本项目 `v3.4.4`：
 
-- `lpdswing/mineru-web-frontend:v3.4.0`
-- `lpdswing/mineru-web-backend:v3.4.0`
-- `lpdswing/mineru-web-mineru-api:v3.4.0`
+- `lpdswing/mineru-web-frontend:v3.4.4`
+- `lpdswing/mineru-web-backend:v3.4.4`
+- `lpdswing/mineru-web-mineru-api:v3.4.4`
 
 GitHub Release 发布时会使用 release tag 作为 Docker 镜像 tag。普通部署不需要在 `requirements.txt` 里默认指定 MinerU 版本，因为业务 backend/worker 不再安装 MinerU；MinerU 版本由 parser 镜像的 Dockerfile 和 release tag 管理。
 
