@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -29,16 +30,17 @@ class FileFolderPayload(BaseModel):
     folder_id: int | None = None
 
 
-def _artifact_stem(file: FileModel) -> str:
-    return Path(file.minio_path).stem
+def _artifact_stem(minio_path: str) -> str:
+    return Path(minio_path).stem
 
 
-def _parsed_artifact_paths(file: FileModel) -> list[str]:
-    stem = _artifact_stem(file)
+def _parsed_artifact_paths(minio_path: str) -> list[str]:
+    stem = _artifact_stem(minio_path)
     return [
         f"{stem}.md",
         f"{stem}_pages.md",
         f"{stem}_popo.md",
+        f"{stem}_popo.json",
         f"{stem}_popo_status.json",
         f"{stem}_middle.json",
     ]
@@ -58,7 +60,7 @@ def _remove_minio_object(bucket: str, path: str) -> None:
     except Exception as exc:
         if _is_missing_minio_error(exc):
             return
-        raise
+        logger.warning("MinIO object cleanup failed for {}/{}: {}", bucket, path, str(exc))
 
 
 def _remove_minio_prefix(bucket: str, prefix: str) -> None:
@@ -68,14 +70,14 @@ def _remove_minio_prefix(bucket: str, prefix: str) -> None:
     except Exception as exc:
         if _is_missing_minio_error(exc):
             return
-        raise
+        logger.warning("MinIO prefix cleanup failed for {}/{}: {}", bucket, prefix, str(exc))
 
 
-def _remove_parsed_artifacts(file: FileModel) -> None:
-    for path in _parsed_artifact_paths(file):
+def _remove_parsed_artifacts(minio_path: str) -> None:
+    for path in _parsed_artifact_paths(minio_path):
         _remove_minio_object(MINIO_MDS_BUCKET, path)
 
-    prefix = f"{_artifact_stem(file)}/"
+    prefix = f"{_artifact_stem(minio_path)}/"
     _remove_minio_prefix(MINIO_MDS_BUCKET, prefix)
 
 
@@ -210,11 +212,9 @@ def delete_file(
     if not file:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    try:
-        # 删除 MinIO 对象
-        _remove_minio_object(MINIO_BUCKET, file.minio_path)
-        _remove_parsed_artifacts(file)
+    minio_path = file.minio_path
 
+    try:
         # 删除解析内容
         db.query(ParsedContent).filter(
             ParsedContent.file_id == file_id,
@@ -227,5 +227,9 @@ def delete_file(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+    # 数据库提交成功后再清理 MinIO，单个对象失败不影响后续清理
+    _remove_minio_object(MINIO_BUCKET, minio_path)
+    _remove_parsed_artifacts(minio_path)
 
     return {"msg": "删除成功"}
