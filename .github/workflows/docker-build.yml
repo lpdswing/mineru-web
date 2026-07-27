@@ -148,7 +148,7 @@ jobs:
           tags: ${{ steps.meta_mineru_api.outputs.tags }}
           labels: ${{ steps.meta_mineru_api.outputs.labels }}
           build-args: |
-            MINERU_VERSION=3.4.0
+            MINERU_VERSION=3.4.4
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

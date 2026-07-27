@@ -2,9 +2,9 @@
 
 语言： [English](README.md) | 中文
 
-MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文件上传、异步解析、原文件预览、Markdown 预览、PDF 溯源阅读、Popo 增强结果对照和 Markdown 导出能力。当前版本适配 MinerU 3.4.0，业务后端通过官方 MinerU HTTP 服务解析文件，不再直接依赖 MinerU 内部 Python API。
+MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文件上传、异步解析、原文件预览、Markdown 预览、PDF 溯源阅读、Popo 增强结果对照和 Markdown 导出能力。当前版本适配 MinerU 3.4.4，业务后端通过官方 MinerU HTTP 服务解析文件，不再直接依赖 MinerU 内部 Python API。
 
-当前发布版本：`v3.4.0`。
+当前发布版本：`v3.4.4`。
 
 ## 特性
 
@@ -21,7 +21,7 @@ MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文�
 - 文件列表展示 MinerU task 状态、进度、task id 和耗时
 - 支持单文件导出和批量导出 Markdown、按页 Markdown、Popo Markdown
 - 可选 MinerU-Popo 后处理服务，Popo 失败不影响基础解析结果
-- 支持 MinerU 3.4.0 官方 backend 选项
+- 支持 MinerU 3.4.4 官方 backend 选项
 - 业务 backend / worker / frontend 可构建多架构镜像
 - Linux 服务器部署使用 `mineru-router`，适合多 GPU 环境统一调度
 - macOS Apple Silicon 可在宿主机启动 MinerU API，Docker 只运行业务服务
@@ -132,15 +132,22 @@ npm run build
 
 ## 版本和发布
 
-本项目版本号跟随兼容的 MinerU 版本。当前版本 `v3.4.0` 对应 MinerU `3.4.0`：
+本项目版本号跟随兼容的 MinerU 版本。当前版本 `v3.4.4` 对应 MinerU `3.4.4`：
 
-- `lpdswing/mineru-web-frontend:v3.4.0`
-- `lpdswing/mineru-web-backend:v3.4.0`
-- `lpdswing/mineru-web-mineru-api:v3.4.0`
+- `lpdswing/mineru-web-frontend:v3.4.4`
+- `lpdswing/mineru-web-backend:v3.4.4`
+- `lpdswing/mineru-web-mineru-api:v3.4.4`
 
-发布 GitHub Release 时使用 tag `v3.4.0`。发布后 `.github/workflows/docker-build.yml` 会使用 release tag 构建并推送同名 Docker 镜像。若只发布 mineru-web 补丁且 MinerU 兼容版本不变，版本号可使用 `v3.4.0-web.1` 这类后缀。
+发布 GitHub Release 时使用 tag `v3.4.4`。发布后 `.github/workflows/docker-build.yml` 会使用 release tag 构建并推送同名 Docker 镜像。若只发布 mineru-web 补丁且 MinerU 兼容版本不变，版本号可使用 `v3.4.4-web.1` 这类后缀。
 
 ## 更新日志
+
+### 3.4.4 - 2026-07-27
+
+- 适配 MinerU 3.4.4
+- MinerU API 镜像构建改为安装 `mineru[core]==3.4.4`
+- 发布镜像版本升级到 `v3.4.4`
+- 保留现有 HTTP API 客户端和按页 Markdown 补丁；它们依赖的上游集成点与 MinerU 3.4.0 相同
 
 ### 3.4.0 - 2026-06-30
 
