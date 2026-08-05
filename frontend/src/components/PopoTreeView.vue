@@ -235,10 +235,10 @@ const downloadJson = () => {
   color: #fff;
 }
 
-.type-title { background: #409eff; }
-.type-table { background: #e6a23c; }
-.type-image { background: #67c23a; }
-.type-text { background: #909399; }
+.type-title { background: var(--type-title-color); }
+.type-table { background: var(--type-table-color); }
+.type-image { background: var(--type-image-color); }
+.type-text { background: var(--type-text-color); }
 
 .popo-node-title {
   font-weight: 600;

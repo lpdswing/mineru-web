@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { HomeFilled, Upload, Document, Setting, SwitchButton, User } from '@element-plus/icons-vue'
+import { HomeFilled, Upload, Document, Setting, SwitchButton, User, Moon, Sunny } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ref, computed } from 'vue'
 import { logoutUser, useCurrentUser } from '@/utils/user'
+import { useTheme } from '@/utils/theme'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,6 +23,7 @@ const activeMenu = computed(() => {
 const isSettingsPage = computed(() => route.path === '/settings')
 const isAuthPage = computed(() => route.meta.public === true)
 const currentUser = useCurrentUser()
+const { isDark, toggleTheme } = useTheme()
 
 const sidebarHover = ref(false)
 
@@ -80,6 +82,21 @@ const handleLogout = async () => {
             <span v-show="sidebarHover" class="user-email">{{ currentUser?.email }}</span>
           </transition>
         </div>
+
+        <button
+          class="nav-item theme-toggle"
+          type="button"
+          :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'"
+          :title="isDark ? '浅色模式' : '深色模式'"
+          @click="toggleTheme"
+        >
+          <div class="nav-icon-wrapper">
+            <el-icon :size="20"><Sunny v-if="isDark" /><Moon v-else /></el-icon>
+          </div>
+          <transition name="fade">
+            <span v-show="sidebarHover" class="nav-label">{{ isDark ? '浅色模式' : '深色模式' }}</span>
+          </transition>
+        </button>
 
         <div 
           class="nav-item settings-item" 
@@ -270,6 +287,14 @@ const handleLogout = async () => {
 
 .settings-item {
   margin-bottom: 4px;
+}
+
+.theme-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
 }
 
 .user-item {
