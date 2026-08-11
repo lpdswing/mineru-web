@@ -58,15 +58,15 @@ export function getUploadStatusType(status: string): string {
 
 // 后端配置映射
 export const BackendConfig = {
-  pipeline: { icon: 'Pipeline', color: '#409EFF' },
-  'vlm-engine': { icon: 'VLM Engine', color: '#67C23A' },
-  'vlm-http-client': { icon: 'VLM HTTP', color: '#529B2E' },
-  'hybrid-engine': { icon: 'Hybrid Engine', color: '#E6A23C' },
-  'hybrid-http-client': { icon: 'Hybrid HTTP', color: '#B88230' },
-  'vlm-auto-engine': { icon: 'VLM Auto', color: '#67C23A' },
-  'hybrid-auto-engine': { icon: 'Hybrid Auto', color: '#E6A23C' },
-  vlm: { icon: 'VLM', color: '#67C23A' },
-  hybrid: { icon: 'Hybrid', color: '#E6A23C' }
+  pipeline: { icon: 'Pipeline', color: 'var(--backend-pipeline-color)' },
+  'vlm-engine': { icon: 'VLM Engine', color: 'var(--backend-vlm-color)' },
+  'vlm-http-client': { icon: 'VLM HTTP', color: 'var(--backend-vlm-secondary-color)' },
+  'hybrid-engine': { icon: 'Hybrid Engine', color: 'var(--backend-hybrid-color)' },
+  'hybrid-http-client': { icon: 'Hybrid HTTP', color: 'var(--backend-hybrid-secondary-color)' },
+  'vlm-auto-engine': { icon: 'VLM Auto', color: 'var(--backend-vlm-color)' },
+  'hybrid-auto-engine': { icon: 'Hybrid Auto', color: 'var(--backend-hybrid-color)' },
+  vlm: { icon: 'VLM', color: 'var(--backend-vlm-color)' },
+  hybrid: { icon: 'Hybrid', color: 'var(--backend-hybrid-color)' }
 } as const
 
 /**
@@ -75,9 +75,9 @@ export const BackendConfig = {
 export function getBackendInfo(backend?: string) {
   const exactConfig = BackendConfig[backend as keyof typeof BackendConfig]
   if (exactConfig) return exactConfig
-  if (backend?.startsWith('vlm-')) return { icon: 'VLM', color: '#67C23A' }
-  if (backend?.startsWith('hybrid-')) return { icon: 'Hybrid', color: '#E6A23C' }
-  return { icon: '', color: '#909399' }
+  if (backend?.startsWith('vlm-')) return { icon: 'VLM', color: 'var(--backend-vlm-color)' }
+  if (backend?.startsWith('hybrid-')) return { icon: 'Hybrid', color: 'var(--backend-hybrid-color)' }
+  return { icon: '', color: 'var(--type-text-color)' }
 }
 
 /**

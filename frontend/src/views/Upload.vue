@@ -550,12 +550,12 @@ const handleUpload = async () => {
 }
 
 .status-success {
-  background: rgb(52 199 89 / 0.12);
+  background: var(--success-tint);
   color: var(--success-color);
 }
 
 .status-error {
-  background: rgb(255 59 48 / 0.12);
+  background: var(--danger-tint);
   color: var(--danger-color);
 }
 

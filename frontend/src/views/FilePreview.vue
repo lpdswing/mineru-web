@@ -1616,15 +1616,15 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
 }
 
 .reader-source-pill.type-table {
-  color: #8a5b16;
+  color: var(--source-table-color);
 }
 
 .reader-source-pill.type-image {
-  color: #0f766e;
+  color: var(--source-image-color);
 }
 
 .reader-source-pill.type-formula {
-  color: #7c3aed;
+  color: var(--source-formula-color);
 }
 
 .reader-source-pill.type-assist {

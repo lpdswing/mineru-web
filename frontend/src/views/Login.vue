@@ -1,5 +1,14 @@
 <template>
   <main class="auth-page">
+    <button
+      class="appearance-toggle"
+      type="button"
+      :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'"
+      :title="isDark ? '浅色模式' : '深色模式'"
+      @click="toggleTheme"
+    >
+      <el-icon><Sunny v-if="isDark" /><Moon v-else /></el-icon>
+    </button>
     <section class="auth-panel">
       <div class="brand-block">
         <img src="/logo.png" alt="MinerU" class="brand-logo" />
@@ -62,8 +71,9 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Lock, Message } from '@element-plus/icons-vue'
+import { Lock, Message, Moon, Sunny } from '@element-plus/icons-vue'
 import { loginWithEmail, registerWithEmail } from '@/utils/user'
+import { useTheme } from '@/utils/theme'
 
 const router = useRouter()
 const route = useRoute()
@@ -73,6 +83,7 @@ const password = ref('')
 const mode = ref<'login' | 'register'>('login')
 const submitting = ref(false)
 const isRegisterMode = computed(() => mode.value === 'register')
+const { isDark, toggleTheme } = useTheme()
 
 const toggleMode = () => {
   mode.value = isRegisterMode.value ? 'login' : 'register'
@@ -108,23 +119,48 @@ const submit = async () => {
 
 <style scoped>
 .auth-page {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(0, 122, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 50% 0%, var(--auth-glow), transparent 34%),
     var(--bg-secondary);
 }
 
 .auth-panel {
   width: min(100%, 420px);
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(210, 214, 222, 0.70);
+  background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   padding: 32px;
   backdrop-filter: blur(18px);
+}
+
+.appearance-toggle {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.appearance-toggle:hover {
+  border-color: var(--primary-light);
+  background: var(--bg-hover);
+  color: var(--primary-color);
 }
 
 .brand-block {
