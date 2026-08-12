@@ -1,0 +1,234 @@
+# Docker Compose 配置文件 - 华为昇腾 NPU 版本
+# 适用于 Ascend 910B (Atlas A2) + 已安装昇腾驱动/CANN 的服务器。
+# 与 docker-compose.yml 的差异:
+#   - mineru-router → mineru-api(基于 vllm-ascend 的 NPU 镜像,本地构建)
+#   - backend/worker 的 MINERU_API_URL 指向 http://mineru-api:8000
+#   - 设备挂载为 /dev/davinci* 替代 NVIDIA GPU
+#
+# 前置条件:npu-smi info 能看到卡,/usr/local/Ascend/driver 存在,/dev/davinci0 存在。
+# 详见 docs/deployment.md 的"华为昇腾 NPU / 910B 部署"章节。
+
+services:
+  frontend:
+    image: lpdswing/mineru-web-frontend:v3.4.4
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8088:80"
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - backend
+      - minio
+    networks:
+      - mineru-network
+
+  backend:
+    image: lpdswing/mineru-web-backend:v3.4.4
+    environment:
+      - TZ=Asia/Shanghai
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. SERVER_IP:9000}
+      - DATABASE_URL=sqlite:///./mineru.db
+      - MINERU_API_URL=http://mineru-api:8000
+      - MINERU_API_HYBRID_EFFORT=${MINERU_API_HYBRID_EFFORT:-high}
+      - SERVER_URL=${SERVER_URL:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mineru-api:
+        condition: service_healthy
+    networks:
+      - mineru-network
+
+  worker:
+    image: lpdswing/mineru-web-backend:v3.4.4
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    command: python3 run_worker.py
+    environment:
+      - TZ=Asia/Shanghai
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:?set MINIO_ENDPOINT to a host address reachable by browser and containers, e.g. SERVER_IP:9000}
+      - DATABASE_URL=sqlite:///./mineru.db
+      - MINERU_API_URL=http://mineru-api:8000
+      - MINERU_API_HYBRID_EFFORT=${MINERU_API_HYBRID_EFFORT:-high}
+      - SERVER_URL=${SERVER_URL:-}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+      - MINERU_API_USE_ASYNC_TASKS=${MINERU_API_USE_ASYNC_TASKS:-0}
+      - POPO_ENABLED=${POPO_ENABLED:-0}
+      - POPO_API_URL=${POPO_API_URL:-http://popo-postprocessor:8010}
+      - POPO_TIMEOUT_SECONDS=${POPO_TIMEOUT_SECONDS:-1800}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mineru-api:
+        condition: service_healthy
+    networks:
+      - mineru-network
+
+  mcp:
+    # MCP 服务把后端 API 暴露给 LLM 客户端（Claude Code 等）。默认不随 `up` 启动；
+    # 显式启用：docker compose -f docker-compose.npu.yml --profile mcp up -d mcp
+    # 启用前必须在 .env 设置 MINERU_AUTH_USER / MINERU_AUTH_PASS（已注册用户的邮箱/密码）。
+    # parse_document 解析的是 mcp 容器内路径；宿主 ./inbox 只读挂载到 /inbox，可放待解析文件。
+    profiles: ["mcp"]
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    image: mineru-web-mcp:v3.4.4
+    container_name: mcp
+    ports:
+      - "8001:8001"
+    environment:
+      TZ: Asia/Shanghai
+      BACKEND_URL: http://backend:8000
+      # 用账号密码登录后端拿 session token；user 必须已在前端注册。
+      # 这里不能用 :?（compose 解析整个文件时会校验插值，会逼非 mcp 部署也填值），
+      # 故用 :- 空默认；未填时 mcp 容器照常起、首次工具调用在 _login 抛错并打日志。
+      MINERU_AUTH_USER: ${MINERU_AUTH_USER:-}
+      MINERU_AUTH_PASS: ${MINERU_AUTH_PASS:-}
+    volumes:
+      - ./inbox:/inbox:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - mineru-network
+
+  mineru-api:
+    build:
+      context: ./backend
+      dockerfile: mineru-api.npu.Dockerfile
+      args:
+        NPU_BASE_IMAGE: ${NPU_BASE_IMAGE:-quay.io/ascend/vllm-ascend:v0.18.0}
+        MINERU_VERSION: ${MINERU_VERSION:-3.4.4}
+    image: mineru-web-mineru-api-npu:v3.4.4
+    container_name: mineru-api
+    restart: always
+    ports:
+      - "8000:8000"
+    devices:
+      # 解析用的 NPU。默认单卡 davinci0。多卡按需追加:
+      #   - /dev/davinci1:/dev/davinci1
+      #   - /dev/davinci2:/dev/davinci2
+      # 并通过 ASCEND_RT_VISIBLE_DEVICES 指定可见卡(类似 CUDA_VISIBLE_DEVICES)。
+      - /dev/davinci0:/dev/davinci0
+      - /dev/davinci_manager:/dev/davinci_manager
+      - /dev/devmm_svm:/dev/devmm_svm
+      - /dev/hisi_hdc:/dev/hisi_hdc
+    environment:
+      TZ: Asia/Shanghai
+      MINERU_MODEL_SOURCE: local
+      # 模型 cache 指向挂载点 /models(运行时用 local,这里仅为路径一致性)
+      MODELSCOPE_CACHE: /models
+      HF_HOME: /models
+      MINERU_API_OUTPUT_ROOT: /output
+      # 即使使用 vllm 后端也必须保留,否则 MinerU 走 CUDA 分支会报错。
+      MINERU_LMDEPLOY_DEVICE: ascend
+      # vllm-ascend 多进程 worker 需要 spawn,默认 fork 会和 NPU 运行时冲突。
+      VLLM_WORKER_MULTIPROC_METHOD: spawn
+    entrypoint: mineru-api
+    command:
+      --host 0.0.0.0
+      --port 8000
+      --allow-public-http-client
+    volumes:
+      # 驱动/管理接口,只读挂载。不同驱动版本路径可能略有差异,按实际调整。
+      - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+      - /var/log/npu:/usr/slog
+      # 运行时 patch 可随 bind mount 更新,改完重启 mineru-api 即可生效。
+      - ./backend/mineru_api_patch:/app/mineru_api_patch:ro
+      # 模型与配置(挂载,不打包进镜像);由 scripts/download-models.sh 产出
+      - ./models:/models:ro
+      - ./mineru.json:/root/mineru.json:ro
+      - mineru_api_output:/output
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    networks:
+      - mineru-network
+
+  mineru-models-download:
+    # 一次性服务:在联网机器下载模型到 ./models/,配置写到 ./mineru.json。
+    # profiles 隔离,docker compose up 不会启动它。
+    # 触发:bash scripts/download-models.sh
+    #       或 docker compose -f docker-compose.npu.yml --profile download run --rm mineru-models-download
+    image: mineru-web-mineru-api-npu:v3.4.4
+    profiles: ["download"]
+    volumes:
+      - ./models:/models
+      - ./mineru.json:/root/mineru.json
+    environment:
+      TZ: Asia/Shanghai
+      MODELSCOPE_CACHE: /models
+      HF_HOME: /models
+      # 下载时宿主无 NPU(Windows build 机)或 build 阶段无 NPU,禁止 torch 自动加载 torch_npu,
+      # 否则 import 链会因找不到 libascend_hal.so 失败。官方 NPU Dockerfile 下载模型用同一变量。
+      TORCH_DEVICE_BACKEND_AUTOLOAD: "0"
+    # Dockerfile ENTRYPOINT 会 export MINERU_MODEL_SOURCE=local;
+    # mineru-models-download 检测到 local 会临时 override 用下面的 -s 真实下载。
+    command: mineru-models-download -s ${MINERU_MODEL_SOURCE:-modelscope} -m all
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mineru-network
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      TZ: Asia/Shanghai
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - mineru-network
+
+volumes:
+  minio_data:
+  redis_data:
+  mineru_api_output:
+
+networks:
+  mineru-network:
+    driver: bridge

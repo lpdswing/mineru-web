@@ -62,3 +62,10 @@ output/
 graphify-out/
 .codex/
 .superpowers/
+
+# 本地测试 / 离线部署产物（根目录）
+/docker-compose.local.yml
+/test-*.py
+/test-*.png
+/offline-images/
+/models/

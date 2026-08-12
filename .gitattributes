@@ -1,0 +1,4 @@
+# 强制 shell 脚本使用 LF 行尾。
+# 这些脚本会被传到 Linux (910B) 上执行,Windows 的 autocrlf 转 CRLF 后
+# 会导致 shebang 变成 `#!/usr/bin/env bash\r` 而 exec 失败。
+*.sh text eol=lf
