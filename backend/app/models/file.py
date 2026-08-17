@@ -12,7 +12,7 @@ class File(Base):
     folder_id = Column(Integer, ForeignKey('folders.id', ondelete='SET NULL'), nullable=True, index=True)
     filename = Column(String(256), nullable=False, index=True)  # 添加索引用于搜索
     size = Column(Integer, nullable=False)
-    status = Column(Enum(FileStatus), default=FileStatus.PENDING, index=True)  # 添加索引用于过滤
+    status = Column(Enum(FileStatus, name='filestatus'), default=FileStatus.PENDING, index=True)  # 添加索引用于过滤
     upload_time = Column(DateTime, default=datetime.utcnow, index=True)  # 添加索引用于排序
     minio_path = Column(String(512), nullable=False)
     content_type = Column(String(64), nullable=True)

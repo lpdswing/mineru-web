@@ -11,6 +11,12 @@ from alembic import context
 config = context.config
 database_url = os.getenv("DATABASE_URL")
 if database_url:
+    # 与 app/database.py 保持一致：postgres:// -> postgresql:// 并补默认驱动，
+    # 保证迁移在 PostgreSQL 连接串下可直接运行。
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
+    if database_url.split(":", 1)[0] == "postgresql":
+        database_url = "postgresql+psycopg2://" + database_url[len("postgresql://"):]
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
