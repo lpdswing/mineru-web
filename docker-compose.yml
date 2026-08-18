@@ -69,6 +69,35 @@ services:
     networks:
       - mineru-network
 
+  mcp:
+    # MCP 服务把后端 API 暴露给 LLM 客户端(Claude Code 等)。默认不随 `up` 启动;
+    # 显式启用:docker compose --profile mcp up -d mcp
+    # 启用前必须在 .env 设置 MINERU_AUTH_USER / MINERU_AUTH_PASS(已注册用户的邮箱/密码)。
+    # parse_document 解析的是 mcp 容器内路径;宿主 ./inbox 只读挂载到 /inbox,可放待解析文件。
+    profiles: ["mcp"]
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    image: mineru-web-mcp:v3.4.4
+    container_name: mcp
+    ports:
+      - "8001:8001"
+    environment:
+      TZ: Asia/Shanghai
+      BACKEND_URL: http://backend:8000
+      # 用账号密码登录后端拿 session token;user 必须已在前端注册。
+      # 这里不能用 :?(compose 解析整个文件时会校验插值,会逼非 mcp 部署也填值),
+      # 故用 :- 空默认;未填时 mcp 容器照常起、首次工具调用在 _login 抛错并打日志。
+      MINERU_AUTH_USER: ${MINERU_AUTH_USER:-}
+      MINERU_AUTH_PASS: ${MINERU_AUTH_PASS:-}
+    volumes:
+      - ./inbox:/inbox:ro
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - mineru-network
+
   mineru-router:
     image: lpdswing/mineru-web-mineru-api:v3.4.4
     container_name: mineru-router

@@ -5,7 +5,7 @@ MinerU Web Service - MCP Server (HTTP/SSE)
 通过 SSE 传输对外暴露，默认 :8001，SSE 流端点 /sse。
 
 走本地解析路径：/api/upload → 轮询 /api/files/{id}/parse/status → /api/files/{id}/parsed_content。
-解析由后端 worker 调用本地 mineru-api（910B NPU）完成，不依赖 mineru.net 云端。
+解析由后端 worker 调用 compose 内 MinerU 解析服务（mineru-router）完成，不依赖 mineru.net 云端。
 
 认证：用 MINERU_AUTH_USER / MINERU_AUTH_PASS 登录拿 session token，401 自动重登。
 环境变量：
@@ -25,7 +25,7 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
 AUTH_USER = os.environ.get("MINERU_AUTH_USER", "")
 AUTH_PASS = os.environ.get("MINERU_AUTH_PASS", "")
 POLL_INTERVAL = 3
-POLL_TIMEOUT = 60 * 30     # 本地 NPU 解析可能较慢，最长等 30 分钟
+POLL_TIMEOUT = 60 * 30     # 本地解析可能较慢，最长等 30 分钟
 SESSION_COOKIE = "mineru_session"
 
 if not AUTH_USER or not AUTH_PASS:
@@ -69,14 +69,14 @@ async def _invalidate_token() -> None:
         _cached_token = None
 
 
-async def _request(method: str, path: str, **kwargs) -> httpx.Response:
+async def _request(method: str, path: str, timeout: float = 60, **kwargs) -> httpx.Response:
     """带认证的请求。401 时清缓存重新登录，最多重试一次。"""
     token = await _get_token()
     headers = kwargs.pop("headers", {}) or {}
     r: httpx.Response
     for attempt in range(2):
         headers["Authorization"] = f"Bearer {token}"
-        async with httpx.AsyncClient(timeout=60) as c:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.request(method, f"{BACKEND_URL}{path}", headers=headers, **kwargs)
         if r.status_code != 401 or attempt:
             return r
@@ -104,9 +104,9 @@ def _normalize_path(path: str) -> str:
 
 async def _parse_bytes(filename: str, data: bytes, content_type: str = "application/octet-stream") -> str:
     """上传到后端本地接口，轮询解析状态，返回 Markdown。"""
-    # 1. upload（upload 后后端自动把任务入队给 worker）
+    # 1. upload（upload 后后端自动把任务入队给 worker）。大文件上传可能较慢，放宽超时。
     files = {"files": (filename, data, content_type)}
-    r = await _request("POST", "/api/upload", files=files)
+    r = await _request("POST", "/api/upload", timeout=300, files=files)
     r.raise_for_status()
     uploaded = r.json().get("files") or []
     if not uploaded:
@@ -144,20 +144,27 @@ async def parse_document(file_path: str) -> str:
     ./inbox 下的文件可直接传裸文件名；其他位置传容器内绝对路径（需自行挂载对应宿主目录）。
     Windows 盘符路径无效。返回解析后的 Markdown；上传/解析失败或超时会抛错。"""
     p = _normalize_path(file_path)
-    with open(p, "rb") as f:
-        data = f.read()
+
+    def _read() -> bytes:
+        with open(p, "rb") as f:
+            return f.read()
+
+    data = await asyncio.to_thread(_read)
     return await _parse_bytes(os.path.basename(p), data)
 
 
 @mcp.tool()
 async def parse_document_url(url: str) -> str:
-    """从 URL 下载文档并经本地 MinerU（910B NPU）解析。返回解析后的 Markdown。"""
-    async with httpx.AsyncClient(timeout=120) as c:
+    """从 URL 下载文档并经本地 MinerU 解析。返回解析后的 Markdown。"""
+    async with httpx.AsyncClient(timeout=600, follow_redirects=True) as c:
         r = await c.get(url)
         r.raise_for_status()
         data = r.content
-        filename = url.rsplit("/", 1)[-1].split("?")[0] or "document"
-    return await _parse_bytes(filename, data)
+        # 用最终 URL 提文件名（跟随重定向后 r.url 才是真实文件地址）
+        filename = str(r.url).rsplit("/", 1)[-1].split("?")[0] or "document"
+        # 透传上游 content-type（去掉 ; charset=... 后缀），缺失时兜底 octet-stream
+        content_type = (r.headers.get("content-type") or "application/octet-stream").split(";", 1)[0].strip()
+    return await _parse_bytes(filename, data, content_type)
 
 
 @mcp.tool()
@@ -181,14 +188,6 @@ async def get_result(file_id: int) -> str:
             c = rr.json()
             markdown = c if isinstance(c, str) else json.dumps(c, ensure_ascii=False)
     return json.dumps({"status": status, "markdown": markdown}, ensure_ascii=False)
-
-
-@mcp.tool()
-async def get_content_list(file_id: int) -> str:
-    """按 id 获取结构化 content_list（带类型/文本/bbox 的块列表）。"""
-    r = await _request("GET", f"/api/files/{file_id}/content")
-    r.raise_for_status()
-    return json.dumps(r.json(), ensure_ascii=False)
 
 
 @mcp.tool()

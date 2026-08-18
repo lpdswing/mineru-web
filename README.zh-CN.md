@@ -24,6 +24,8 @@ MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文�
 - 支持 MinerU 3.4.4 官方 backend 选项
 - 业务 backend / worker / frontend 可构建多架构镜像
 - Linux 服务器部署使用 `mineru-router`，适合多 GPU 环境统一调度
+- 支持离线（无外网）NVIDIA 服务器部署（V100），配套镜像构建/载入脚本
+- 可选 MCP 服务，把后端 API 暴露给 Claude Code 等 LLM 客户端
 - macOS Apple Silicon 可在宿主机启动 MinerU API，Docker 只运行业务服务
 
 ## 快速开始
@@ -54,6 +56,8 @@ macOS Apple Silicon 部署：
 docker compose --env-file .env -f docker-compose.mac.yml up -d --build
 ```
 
+离线（无外网）服务器（如 NVIDIA V100）：先在联网机器上用 `scripts/` 下的脚本准备自包含 bundle，传输后部署，详见[部署文档](docs/deployment.md)。
+
 启动后访问：
 
 - Web：`http://SERVER_IP:8088`
@@ -63,7 +67,7 @@ docker compose --env-file .env -f docker-compose.mac.yml up -d --build
 
 首次访问 Web 时注册邮箱账号即可开始使用。
 
-Linux 服务器、macOS Apple Silicon、模型下载、MinerU Router、多 GPU、MinIO 地址和验证命令见：[部署文档](docs/deployment.md)。
+Linux 服务器、macOS Apple Silicon、V100 离线部署、MCP 服务、模型下载、MinerU Router、多 GPU、MinIO 地址和验证命令见：[部署文档](docs/deployment.md)。
 
 ## 界面展示
 
@@ -96,10 +100,13 @@ Linux 服务器、macOS Apple Silicon、模型下载、MinerU Router、多 GPU�
 mineru-web/
 ├── backend/                  # FastAPI 后端、worker、数据库模型和测试
 ├── frontend/                 # Vue 3 前端
+├── mcp/                      # MCP 服务，把后端 API 暴露给 LLM 客户端
+├── scripts/                  # 离线 bundle 构建与一键部署脚本
 ├── docs/
 │   └── deployment.md         # 部署说明
 ├── docker-compose.yml        # Linux / 服务器部署
 ├── docker-compose.mac.yml    # macOS 宿主机 MinerU API 部署
+├── docker-compose.v100.offline.yml   # NVIDIA V100 离线部署
 └── README.md
 ```
 
@@ -141,6 +148,12 @@ npm run build
 发布 GitHub Release 时使用 tag `v3.4.4`。发布后 `.github/workflows/docker-build.yml` 会使用 release tag 构建并推送同名 Docker 镜像。若只发布 mineru-web 补丁且 MinerU 兼容版本不变，版本号可使用 `v3.4.4-web.1` 这类后缀。
 
 ## 更新日志
+
+### 未发布
+
+- 新增离线（无外网）NVIDIA 服务器部署工具（V100）：`scripts/build-v100-offline.sh`、`scripts/deploy-v100.sh`、`docker-compose.v100.offline.yml`（模型已打进发布的 MinerU API 镜像，无需单独下载）
+- 新增可选 MCP 服务（`mcp/`，profile 隔离），把后端 API 暴露给 Claude Code 等 LLM 客户端
+- 移除昇腾 910B NPU 部署方案
 
 ### 3.4.4 - 2026-07-27
 

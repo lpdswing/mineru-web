@@ -24,6 +24,8 @@ Current release: `v3.4.4`.
 - Support for official MinerU 3.4.4 backend options
 - Multi-architecture images for the business backend, worker, and frontend
 - Linux server deployment with `mineru-router` for unified multi-GPU scheduling
+- Offline deployment for air-gapped NVIDIA servers (V100) via image build/load scripts
+- Optional MCP service that exposes the backend API to LLM clients such as Claude Code
 - macOS Apple Silicon deployment with MinerU API on the host and business services in Docker
 
 ## Quick Start
@@ -54,6 +56,8 @@ macOS Apple Silicon deployment:
 docker compose --env-file .env -f docker-compose.mac.yml up -d --build
 ```
 
+Offline servers with no internet access (e.g. NVIDIA V100): prepare a self-contained bundle with the scripts under `scripts/` on an online machine, transfer it, and deploy — see the [Deployment Guide](docs/deployment.md).
+
 After startup, open:
 
 - Web: `http://SERVER_IP:8088`
@@ -63,7 +67,7 @@ After startup, open:
 
 Register an email account on the first visit to start using the app.
 
-For Linux server deployment, macOS Apple Silicon setup, model downloads, MinerU Router, multi-GPU scheduling, MinIO endpoint configuration, and verification commands, see [Deployment Guide](docs/deployment.md).
+For Linux server deployment, macOS Apple Silicon setup, offline (air-gapped) V100 deployment, the MCP service, model downloads, MinerU Router, multi-GPU scheduling, MinIO endpoint configuration, and verification commands, see [Deployment Guide](docs/deployment.md).
 
 ## Screenshots
 
@@ -93,10 +97,13 @@ For Linux server deployment, macOS Apple Silicon setup, model downloads, MinerU 
 mineru-web/
 ├── backend/                  # FastAPI backend, worker, database models, and tests
 ├── frontend/                 # Vue 3 frontend
+├── mcp/                      # MCP service exposing the backend API to LLM clients
+├── scripts/                  # Offline bundle build and one-click deploy scripts
 ├── docs/
 │   └── deployment.md         # Deployment guide
 ├── docker-compose.yml        # Linux / server deployment
 ├── docker-compose.mac.yml    # macOS host MinerU API deployment
+├── docker-compose.v100.offline.yml   # NVIDIA V100 offline deployment
 └── README.md
 ```
 
@@ -138,6 +145,12 @@ This project version follows the compatible MinerU version. Current version `v3.
 Use tag `v3.4.4` when publishing the GitHub Release. After the release is published, `.github/workflows/docker-build.yml` builds and pushes Docker images with the same release tag. If only MinerU Web changes while the compatible MinerU version stays the same, use a suffix such as `v3.4.4-web.1`.
 
 ## Changelog
+
+### Unreleased
+
+- Added offline deployment tooling for air-gapped NVIDIA servers (V100): `scripts/build-v100-offline.sh`, `scripts/deploy-v100.sh`, `docker-compose.v100.offline.yml` (models are baked into the published MinerU API image, no separate download)
+- Added an optional MCP service (`mcp/`, profile-gated) that exposes backend APIs to LLM clients such as Claude Code
+- Removed the Ascend 910B NPU deployment option
 
 ### 3.4.4 - 2026-07-27
 

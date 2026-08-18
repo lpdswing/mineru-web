@@ -67,5 +67,9 @@ graphify-out/
 /docker-compose.local.yml
 /test-*.py
 /test-*.png
-/offline-images/
+/v100-offline-bundle/
+# mcp 服务的 ./inbox 挂载源(用户往里放待解析文件,不该进库)
+/inbox/
+# 910B 时代遗留的本地目录,留在磁盘上防误提交;确认没用后可整个删掉
 /models/
+/offline-images/
