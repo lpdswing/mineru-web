@@ -8,8 +8,10 @@ class Settings(Base):
     user_id = Column(String(64), nullable=False, index=True)
     ocr_lang = Column(String(32), default='ch')  # lang背后对应的是ocr模型的选择
     force_ocr = Column(Boolean, default=False)
-    table_recognition = Column(Boolean, default=False)
-    formula_recognition = Column(Boolean, default=False)
+    # 默认值必须与 api/settings.py GET 兜底一致：True。曾因默认 False，
+    # 首次部分 PUT /settings 建行时静默关闭表格/公式识别，导致发票表格整块丢失。
+    table_recognition = Column(Boolean, default=True)
+    formula_recognition = Column(Boolean, default=True)
     backend = Column(String(64), default=DEFAULT_MINERU_BACKEND)
 
     def to_dict(self):
