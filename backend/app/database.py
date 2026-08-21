@@ -8,8 +8,24 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import contextmanager
 
+
+def _normalize_db_url(url: str) -> str:
+    """
+    归一化数据库连接串，使 SQLite / PostgreSQL 切换更"丝滑"：
+    - 部分云厂商给的 postgres:// 规范为 postgresql://（SQLAlchemy 要求后者）
+    - 对于裸 postgresql://（未指定驱动）自动补上 +psycopg2，避免用户漏写驱动而报错
+    SQLite 及其它协议原样返回。
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    scheme_prefix = url.split(":", 1)[0]
+    if scheme_prefix == "postgresql":
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+    return url
+
+
 # 数据库配置
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./mineru.db')
+DATABASE_URL = _normalize_db_url(os.getenv('DATABASE_URL', 'sqlite:///./mineru.db'))
 
 # 创建数据库引擎（整个应用共享一个实例）
 engine = create_engine(

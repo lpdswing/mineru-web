@@ -5,6 +5,8 @@ loguru==0.7.3
 alembic==1.16.1
 minio==7.2.15
 SQLAlchemy==2.0.41
+# PostgreSQL 驱动（切换 DATABASE_URL 为 postgresql+psycopg2:// 时启用；默认 SQLite 不需要）
+psycopg2-binary==2.9.10
 redis
 httpx==0.28.1
 pytest==8.4.0

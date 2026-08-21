@@ -25,6 +25,7 @@ Current release: `v3.4.4`.
 - Multi-architecture images for the business backend, worker, and frontend
 - Linux server deployment with `mineru-router` for unified multi-GPU scheduling
 - macOS Apple Silicon deployment with MinerU API on the host and business services in Docker
+- PostgreSQL database support, switchable via `DATABASE_URL` (SQLite remains the default)
 
 ## Quick Start
 

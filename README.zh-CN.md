@@ -25,6 +25,7 @@ MinerU Web 是一个面向文档解析和结果核验的 Web 应用，提供文�
 - 业务 backend / worker / frontend 可构建多架构镜像
 - Linux 服务器部署使用 `mineru-router`，适合多 GPU 环境统一调度
 - macOS Apple Silicon 可在宿主机启动 MinerU API，Docker 只运行业务服务
+- 支持 PostgreSQL 数据库，通过 `DATABASE_URL` 切换（默认仍为 SQLite）
 
 ## 快速开始
 
