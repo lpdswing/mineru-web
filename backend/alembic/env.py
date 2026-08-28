@@ -1,8 +1,9 @@
 from logging.config import fileConfig
 import os
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, inspect
 from sqlalchemy import pool
+import sqlalchemy as sa
 
 from alembic import context
 
@@ -32,6 +33,31 @@ from app.models.base import Base
 from app import models
 
 target_metadata = Base.metadata
+
+# 已发布 revision 的重命名映射（旧 ID -> 新 ID）。
+# 背景：旧 ID 超过 Alembic 默认 alembic_version 表的 VARCHAR(32) 长度，在全新库上
+# 会写入失败，故重命名为短 ID 属于修复。此处兼容极少数「手动建了 VARCHAR(255) 宽表
+# 且恰好停靠在旧 ID」的历史库，将其版本号平移到新 ID，否则 alembic 会报
+# ``Can't locate revision identified by '<old>'``。
+_RENAMED_REVISIONS = {
+    "20260613_add_parse_progress_fields": "20260613_parse_progress",
+}
+
+
+def _heal_renamed_revisions(connection) -> None:
+    """在 run_migrations 之前，把停靠在旧 revision ID 的库平移到新 ID。"""
+    inspector = inspect(connection)
+    if not inspector.has_table("alembic_version"):
+        return
+    for old, new in _RENAMED_REVISIONS.items():
+        connection.execute(
+            sa.text(
+                "UPDATE alembic_version SET version_num = :new "
+                "WHERE version_num = :old"
+            ),
+            {"new": new, "old": old},
+        )
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -82,6 +108,9 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            # 必须在事务内部执行：否则 heal 的 execute 会先开启隐式事务，
+            # 使 begin_transaction 退化为 no-op，最终连接关闭时整体回滚。
+            _heal_renamed_revisions(connection)
             context.run_migrations()
 
 

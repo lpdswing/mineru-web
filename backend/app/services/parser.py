@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +127,7 @@ class ParserService:
                 progress = max(current, progress)
             file.progress_percent = progress
         file.progress_message = message[:255]
-        file.last_heartbeat_at = datetime.now()
+        file.last_heartbeat_at = datetime.now(timezone.utc)
         if clear_mineru_task:
             file.mineru_task_id = None
             file.mineru_task_status = None
@@ -247,7 +247,7 @@ class ParserService:
 
             backend = settings.get("backend", "pipeline")
             file.error_message = None
-            file.start_at = datetime.now()
+            file.start_at = datetime.now(timezone.utc)
             self._update_progress(
                 file,
                 "fetching_source",
@@ -292,7 +292,7 @@ class ParserService:
             self.db.add(parsed_content)
 
             file.error_message = None
-            file.finish_at = datetime.now()
+            file.finish_at = datetime.now(timezone.utc)
             self._update_progress(
                 file,
                 "completed",

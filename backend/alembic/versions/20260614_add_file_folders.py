@@ -1,7 +1,7 @@
 """add file folders
 
 Revision ID: 20260614_add_file_folders
-Revises: 20260613_add_parse_progress_fields
+Revises: 20260613_parse_progress
 Create Date: 2026-06-14 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "20260614_add_file_folders"
-down_revision: Union[str, None] = "20260613_add_parse_progress_fields"
+down_revision: Union[str, None] = "20260613_parse_progress"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

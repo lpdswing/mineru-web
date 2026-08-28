@@ -92,3 +92,34 @@ export const ExportFormatNames: Record<ExportFormat, string> = {
   [ExportFormats.MARKDOWN_PAGE]: 'Markdown带页码',
   [ExportFormats.MARKDOWN_POPO]: 'Popo Markdown'
 }
+
+// 识别结果 Markdown 编辑历史版本
+export type ParsedContentVersionSource = 'parse' | 'save' | 'restore'
+
+export interface ParsedContentVersion {
+  id: number
+  version: number
+  note?: string | null
+  source: ParsedContentVersionSource
+  created_at: string
+  is_current: boolean
+}
+
+export interface ParsedContentVersionDetail extends ParsedContentVersion {
+  content: string
+}
+
+export interface SaveParsedContentResult {
+  changed: boolean
+  version: number
+  /** 数据库已提交；对象存储同步是否成功。false 时 sync_error 有值 */
+  synced?: boolean
+  sync_error?: string | null
+}
+
+export interface RestoreParsedContentResult {
+  restored: boolean
+  version: number
+  synced?: boolean
+  sync_error?: string | null
+}

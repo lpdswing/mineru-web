@@ -1,7 +1,10 @@
-from datetime import datetime, date
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..models.file import File
+
+# 业务展示按北京时间（东八区）统计，避免依赖数据库会话时区
+CN_TZ = timezone(timedelta(hours=8))
 
 class StatsService:
     def __init__(self, db: Session):
@@ -13,10 +16,12 @@ class StatsService:
         user_files = self.db.query(File).filter(File.user_id == user_id)
         total_files = user_files.count()
 
-        # 计算今日上传数
-        today = date.today()
+        # 计算今日上传数（按北京时间零点，aware 比较）
+        today_start = datetime.combine(
+            datetime.now(CN_TZ).date(), datetime.min.time(), tzinfo=CN_TZ
+        )
         today_uploads = user_files.filter(
-            File.upload_time >= datetime.combine(today, datetime.min.time())
+            File.upload_time >= today_start
         ).count()
 
         # 计算已用空间（MB）

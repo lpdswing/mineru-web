@@ -1,6 +1,18 @@
 import api from './index'
 import type { AxiosProgressEvent } from 'axios'
-import type { FileItem, ExportFormat, FolderItem, MarkdownVariant, PopoStatus, PopoTreeNode, SourceMap } from '@/types/file'
+import type {
+  FileItem,
+  ExportFormat,
+  FolderItem,
+  MarkdownVariant,
+  PopoStatus,
+  PopoTreeNode,
+  SourceMap,
+  ParsedContentVersion,
+  ParsedContentVersionDetail,
+  SaveParsedContentResult,
+  RestoreParsedContentResult
+} from '@/types/file'
 
 // 文件列表参数
 export interface FileListParams {
@@ -186,5 +198,37 @@ export const filesApi = {
    */
   getContentUrl(fileId: string) {
     return `/api/files/${fileId}/content`
+  },
+
+  /**
+   * 手动编辑并保存识别结果 Markdown
+   */
+  saveParsedContent(fileId: string, content: string, note?: string) {
+    return api.put<SaveParsedContentResult>(`/files/${fileId}/parsed_content`, { content, note })
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取识别结果 Markdown 的编辑历史版本列表
+   */
+  getParsedContentVersions(fileId: string) {
+    return api.get<ParsedContentVersion[]>(`/files/${fileId}/parsed_content/versions`)
+      .then(res => res.data)
+  },
+
+  /**
+   * 获取单个历史版本的完整内容
+   */
+  getParsedContentVersion(fileId: string, versionId: number) {
+    return api.get<ParsedContentVersionDetail>(`/files/${fileId}/parsed_content/versions/${versionId}`)
+      .then(res => res.data)
+  },
+
+  /**
+   * 恢复到指定历史版本
+   */
+  restoreParsedContentVersion(fileId: string, versionId: number) {
+    return api.post<RestoreParsedContentResult>(`/files/${fileId}/parsed_content/versions/${versionId}/restore`)
+      .then(res => res.data)
   }
 }

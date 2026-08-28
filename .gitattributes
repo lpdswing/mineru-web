@@ -1,0 +1,15 @@
+# 统一换行符：仓库内一律 LF，避免 Windows 检出成 CRLF 导致
+# 与行尾相关的断言（如 mineru pages 补丁的单测）在 Windows 上失败。
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
