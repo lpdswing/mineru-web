@@ -38,6 +38,9 @@ class FakeDb:
     def filter(self, *args, **kwargs):
         return self
 
+    def with_for_update(self, *args, **kwargs):
+        return self
+
     def first(self):
         return SimpleNamespace(
             to_dict=lambda: {

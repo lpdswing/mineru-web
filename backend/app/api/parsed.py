@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import datetime
 from io import BytesIO
-from typing import Any
+from typing import Any, NamedTuple
 from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from app.models.parsed_content import ParsedContent
 from app.models.parsed_content_version import ParsedContentVersion
 from app.services.parser import ParserService, get_buckets
 from app.utils.minio_client import get_presigned_url, minio_client
+from app.utils.text_normalize import normalize_newlines
 from app.utils.user_dep import get_user_id
 
 try:
@@ -578,9 +579,30 @@ class SaveParsedContentRequest(BaseModel):
     note: str | None = Field(default=None, max_length=255)
 
 
-def _get_versioned_file(db: Session, file_id: int, user_id: str) -> tuple[FileModel, ParsedContent]:
-    """校验文件可编辑并返回 (file, parsed_content)。"""
-    file = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id).first()
+_MAX_VERSION_RETRIES = 3
+
+
+def _load_versioned_file(
+    db: Session,
+    file_id: int,
+    user_id: str,
+    *,
+    for_update: bool,
+) -> tuple[FileModel, ParsedContent]:
+    """校验文件可编辑并返回 (file, parsed_content)。
+
+    for_update=True 时在**首次查询**就取行锁，后续 pc / version 的读取都落在锁内。
+    加锁点必须放在最前面：先查后锁的话，Session 的 Identity Map 里留的是加锁前的
+    陈旧快照，而 SQLAlchemy 不会自动刷新——PG 的 `SELECT ... FOR UPDATE` 只重读
+    files 行，不会带动 parsed_contents 行。
+
+    PostgreSQL 生成 `SELECT ... FOR UPDATE`；SQLite 的 dialect 会静默忽略该子句
+    （不报错），降级为「整库写锁 + busy_timeout + 唯一约束重试」串行。
+    """
+    query = db.query(FileModel).filter(FileModel.id == file_id, FileModel.user_id == user_id)
+    if for_update:
+        query = query.with_for_update()
+    file = query.first()
     if not file:
         raise HTTPException(status_code=404, detail="文件不存在")
     if file.status != FileStatus.PARSED:
@@ -594,16 +616,14 @@ def _get_versioned_file(db: Session, file_id: int, user_id: str) -> tuple[FileMo
     return file, pc
 
 
-_MAX_VERSION_RETRIES = 3
+def _get_versioned_file(db: Session, file_id: int, user_id: str) -> tuple[FileModel, ParsedContent]:
+    """只读校验（版本列表 / 版本详情 / 写入前的存在性校验）。不承担写入，不拿行锁。"""
+    return _load_versioned_file(db, file_id, user_id, for_update=False)
 
 
-def _lock_file_row(db: Session, file_id: int) -> None:
-    """串行化同一文件的版本写入。
-
-    PostgreSQL 走 SELECT ... FOR UPDATE 行锁；SQLite 的 dialect 会静默忽略该子句
-    （不报错），降级为「整库写锁 + busy_timeout」串行，对本场景已足够。
-    """
-    db.query(FileModel.id).filter(FileModel.id == file_id).with_for_update().first()
+def _lock_versioned_file(db: Session, file_id: int, user_id: str) -> tuple[FileModel, ParsedContent]:
+    """写入路径专用：一次查询即加锁，供 _commit_new_version / _ensure_initial_version 使用。"""
+    return _load_versioned_file(db, file_id, user_id, for_update=True)
 
 
 def _ensure_initial_version(db: Session, file_id: int, user_id: str) -> None:
@@ -613,19 +633,11 @@ def _ensure_initial_version(db: Session, file_id: int, user_id: str) -> None:
     """
     for attempt in range(_MAX_VERSION_RETRIES):
         try:
-            file = db.query(FileModel).filter(
-                FileModel.id == file_id, FileModel.user_id == user_id
-            ).first()
-            if not file or file.status != FileStatus.PARSED:
+            try:
+                file, pc = _lock_versioned_file(db, file_id, user_id)
+            except HTTPException:
+                # 文件不存在 / 未解析完成 / 无识别结果：无需补建
                 return
-            pc = db.query(ParsedContent).filter(
-                ParsedContent.file_id == file_id,
-                ParsedContent.user_id == user_id,
-            ).first()
-            if not pc:
-                return
-
-            _lock_file_row(db, file.id)
 
             exists = db.query(ParsedContentVersion.id).filter(
                 ParsedContentVersion.file_id == file.id
@@ -650,6 +662,13 @@ def _ensure_initial_version(db: Session, file_id: int, user_id: str) -> None:
     raise HTTPException(status_code=503, detail="版本初始化冲突，请重试")
 
 
+class _CommitResult(NamedTuple):
+    max_version: int
+    new_version: int  # 0 表示内容未变化、未生成新版本
+    applied_content: str  # 归一化后真正落库的内容；同步对象存储必须用它
+    old_content: str  # 锁内读到的编辑前内容；页级对齐判定必须用它
+
+
 def _commit_new_version(
     db: Session,
     file_id: int,
@@ -657,7 +676,7 @@ def _commit_new_version(
     content: str,
     source: str,
     note: str | None,
-) -> tuple[int, int]:
+) -> _CommitResult:
     """单一事务完成「惰性补 v1 + 追加新版本 + 更新 parsed_contents」，只 commit 一次。
 
     版本记录与当前内容必须在同一事务内落库，否则第二次提交失败时会出现
@@ -665,26 +684,14 @@ def _commit_new_version(
 
     唯一约束冲突时重试**整个事务**，而不是只重试单条版本插入。
 
-    Returns:
-        (max_version, new_version)；new_version 为 0 表示内容未变化、未生成新版本。
+    内容在入口统一归一化成 LF，并通过 applied_content 返回：调用方同步 MinIO 时
+    必须用这个返回值，否则 DB 与对象存储会出现换行符不一致。
     """
+    content = normalize_newlines(content)
     for attempt in range(_MAX_VERSION_RETRIES):
         try:
-            file = db.query(FileModel).filter(
-                FileModel.id == file_id, FileModel.user_id == user_id
-            ).first()
-            if not file:
-                raise HTTPException(status_code=404, detail="文件不存在")
-            if file.status != FileStatus.PARSED:
-                raise HTTPException(status_code=400, detail="文件尚未解析完成，无法编辑")
-            pc = db.query(ParsedContent).filter(
-                ParsedContent.file_id == file_id,
-                ParsedContent.user_id == user_id,
-            ).first()
-            if not pc:
-                raise HTTPException(status_code=404, detail="识别结果不存在")
-
-            _lock_file_row(db, file.id)
+            file, pc = _lock_versioned_file(db, file_id, user_id)
+            old_content = pc.content or ""
 
             row = db.query(ParsedContentVersion.version).filter(
                 ParsedContentVersion.file_id == file.id
@@ -697,13 +704,16 @@ def _commit_new_version(
                     user_id=pc.user_id,
                     file_id=file.id,
                     version=1,
-                    content=pc.content or "",
+                    content=old_content,
                     source='parse',
                 ))
                 max_version = 1
 
+            # 与「归一化后的旧内容」比较：只有换行符不同不算内容变化，
+            # 否则历史数据里被污染过的 CRLF 会在每次保存时都多出一条冗余版本。
+            content_changed = content != normalize_newlines(old_content)
             new_version = 0
-            if content != pc.content:
+            if content_changed:
                 new_version = max_version + 1
                 db.add(ParsedContentVersion(
                     user_id=file.user_id,
@@ -713,11 +723,14 @@ def _commit_new_version(
                     source=source,
                     note=note,
                 ))
-                pc.content = content
                 max_version = new_version
 
+            # 无论是否生成新版本，都把归一化后的内容写回，让历史污染逐步收敛。
+            # SQLAlchemy 仅在值真的变化时才发 UPDATE，纯 LF 内容不会产生多余写入。
+            pc.content = content
+
             db.commit()
-            return max_version, new_version
+            return _CommitResult(max_version, new_version, content, old_content)
 
         except HTTPException:
             db.rollback()
@@ -779,10 +792,22 @@ def _apply_plain_to_pages(old_pages: str, new_plain: str) -> str:
 
     追加/插入的内容归属到「插入点之后的标记所在页」，页级归属可能有
     一页的偏差（追加文本的归属本身就有歧义），可接受。
+
+    两侧都做换行符归一化：行内容带行尾换行符，只要一侧是 CRLF、另一侧是 LF，
+    每一行都会被判为不等，整篇退化成一个 replace，导致内容全被塞进第 1 页。
+
+    防御：new_plain（普通 Markdown）本应不含 # Page N 分页标记——标记只在
+    _pages.md 里。一旦普通 Markdown 被历史 bug 污染进了标记行，若不在这里剥离，
+    这些标记行会被 diff 当作「新增正文」逐次叠加，让 _pages.md 的标记指数级重复，
+    最终分页崩溃、PDF↔Markdown 同步失效。剥离对正常路径零影响（普通 Markdown
+    本就无标记）；正文恰好含「# Page 1」字样的早期无 patch 产物（如 test.pdf）
+    走 _sync_pages_markdown 的覆盖分支，不会进入本函数。
     """
+    old_pages = normalize_newlines(old_pages)
+    new_plain = normalize_newlines(new_plain)
     pages_lines = old_pages.splitlines(keepends=True)
     old_plain_lines = [l for l in pages_lines if not _is_page_marker_line(l)]
-    new_plain_lines = new_plain.splitlines(keepends=True)
+    new_plain_lines = [l for l in new_plain.splitlines(keepends=True) if not _is_page_marker_line(l)]
 
     sm = difflib.SequenceMatcher(a=old_plain_lines, b=new_plain_lines, autojunk=False)
     inserts: dict[int, list[str]] = {}
@@ -814,6 +839,53 @@ def _apply_plain_to_pages(old_pages: str, new_plain: str) -> str:
     return ''.join(out)
 
 
+def _split_page_sections(pages_md: str) -> list[tuple[str | None, list[str]]]:
+    """按 `# Page N` 标记切段，返回 [(标记行 or None, 该段正文行), ...]。
+
+    出现在第一个标记之前的内容（如文档标题）归入首段，标记为 None。
+    """
+    sections: list[tuple[str | None, list[str]]] = []
+    for line in normalize_newlines(pages_md).splitlines(keepends=True):
+        if _is_page_marker_line(line):
+            sections.append((line.rstrip("\r\n"), []))
+            continue
+        if not sections:
+            sections.append((None, []))
+        sections[-1][1].append(line)
+    return sections
+
+
+def _pages_structure_healthy(existing: str) -> bool:
+    """判定 `# Page N` 分段是否仍然可信。
+
+    只识别一种确定的损坏形态：正文全部集中在第一段，且后续每一页都是空的。
+    这正是换行符不一致导致的症状——所有内容被塞进第 1 页，其余页只剩标记。
+
+    为什么可以用这个判据：`_render_pages_markdown` 拼接时会过滤掉空页
+    （`"\\n\\n".join(p for p in page_markdowns if p.strip())`），所以正常解析
+    结果里不会出现「有 N 个标记但只有第 1 段有内容」。反过来，真实文档中
+    「第一页很长、后续页很短」极其常见，因此不能用占比阈值判定，否则会误伤。
+    """
+    sections = _split_page_sections(existing)
+    if len(sections) <= 1:
+        return True
+    counts = [sum(1 for line in lines if line.strip()) for _, lines in sections]
+    total = sum(counts)
+    if total == 0:
+        return True
+    return not (counts[0] == total and all(count == 0 for count in counts[1:]))
+
+
+def _rebuild_single_page(content: str) -> str:
+    """结构已损坏时的降级：全部正文归入 `# Page 1`，保住内容、放弃溯源分页。
+
+    降级后 `pages 去掉标记 == 正文` 恒成立，后续编辑会稳定走主路径，
+    不会继续在错结构上叠加。
+    """
+    body = normalize_newlines(content).strip()
+    return f"# Page 1\n\n{body}\n" if body else ""
+
+
 def _sync_pages_markdown(file: FileModel, content: str, old_content: str | None = None) -> bool:
     """把编辑后的内容同步进 {stem}_pages.md（保留分页标记）；已一致或对象不存在则跳过。
 
@@ -821,6 +893,9 @@ def _sync_pages_markdown(file: FileModel, content: str, old_content: str | None 
     a) pages 去掉标记行后 == 编辑前内容 → 标记是解析期插入的，走 diff 应用；
     b) pages 与编辑前内容完全相同 → 无分页结构（如 test.pdf），直接整篇覆盖；
     c) 都不满足（pages 陈旧/结构未知）→ 退化 diff，尽力同步。
+
+    对齐校验之前先做结构健康检查：若 pages 已损坏（正文全在首段、后续页为空），
+    判定链对它没有意义，直接降级重建为单页结构，避免在错结构上继续叠加。
 
     Returns:
         True 表示执行了 PUT；False 表示跳过（无对象/内容已一致）。
@@ -840,7 +915,14 @@ def _sync_pages_markdown(file: FileModel, content: str, old_content: str | None 
             return False
         raise
 
-    if old_content is not None:
+    if not _pages_structure_healthy(existing):
+        # 结构已损坏（换行符事故等历史遗留）：对齐判定对它没有意义，降级重建
+        logger.warning(
+            f"[parsed_content] file={file.id} {path} 分页结构已损坏"
+            "（正文集中在首段、后续页为空），降级为单页结构"
+        )
+        new_pages = _rebuild_single_page(content)
+    elif old_content is not None:
         pages_minus_markers = "".join(
             l for l in existing.splitlines(keepends=True) if not _is_page_marker_line(l)
         )
@@ -849,7 +931,7 @@ def _sync_pages_markdown(file: FileModel, content: str, old_content: str | None 
             new_pages = _apply_plain_to_pages(existing, content)
         elif existing == old_content:
             # 无分页结构（或标记即正文），直接覆盖为新内容
-            new_pages = content
+            new_pages = normalize_newlines(content)
         else:
             # pages 与 DB 脱节（如历史同步失败），盲 diff 兜底
             new_pages = _apply_plain_to_pages(existing, content)
@@ -908,16 +990,16 @@ def save_parsed_content(
 
     数据库是权威数据源：即使对象存储同步失败也返回 200，由 synced 标志区分。
     """
-    file, pc = _get_versioned_file(db, file_id, user_id)
-    old_content = pc.content or ""
-    content = body.content or ""
-    max_version, new_version = _commit_new_version(
-        db, file_id, user_id, content, "save", body.note
+    file, _ = _get_versioned_file(db, file_id, user_id)
+    result = _commit_new_version(
+        db, file_id, user_id, body.content or "", "save", body.note
     )
-    synced, sync_error = _sync_minio_after_commit(file, content, old_content)
+    synced, sync_error = _sync_minio_after_commit(
+        file, result.applied_content, result.old_content
+    )
     return {
-        "changed": new_version > 0,
-        "version": new_version or max_version,
+        "changed": result.new_version > 0,
+        "version": result.new_version or result.max_version,
         "synced": synced,
         "sync_error": sync_error,
     }
@@ -977,7 +1059,7 @@ def restore_parsed_content_version(
     恢复动作本身会新增一条内容为目标版本的记录（source='restore'）；被覆盖的当前
     内容不会单独快照，但它仍保留在其原有历史版本中，可通过再次恢复来撤销本次恢复。
     """
-    file, pc = _get_versioned_file(db, file_id, user_id)
+    file, _ = _get_versioned_file(db, file_id, user_id)
     _ensure_initial_version(db, file_id, user_id)
 
     target = db.query(ParsedContentVersion).filter(
@@ -988,14 +1070,15 @@ def restore_parsed_content_version(
     if not target:
         raise HTTPException(status_code=404, detail="版本不存在")
 
-    old_content = pc.content or ""
-    max_version, new_version = _commit_new_version(
+    result = _commit_new_version(
         db, file_id, user_id, target.content, "restore", f"恢复自 v{target.version}"
     )
-    synced, sync_error = _sync_minio_after_commit(file, target.content, old_content)
+    synced, sync_error = _sync_minio_after_commit(
+        file, result.applied_content, result.old_content
+    )
     return {
-        "restored": new_version > 0,
-        "version": new_version or max_version,
+        "restored": result.new_version > 0,
+        "version": result.new_version or result.max_version,
         "synced": synced,
         "sync_error": sync_error,
     }

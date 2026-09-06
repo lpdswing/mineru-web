@@ -15,29 +15,52 @@ export const normalizeTraceText = (value: string) => {
     .toLowerCase()
 }
 
-export const splitMarkdownChunks = (markdown: string) => {
-  const chunks: string[] = []
+export interface MarkdownChunk {
+  text: string
+  /** 该 chunk 前紧邻的连续空行数：0=无空行，1=单空行段落分隔，≥2=用户显式加的空行 */
+  gapBefore: number
+}
+
+export const splitMarkdownChunksWithGaps = (markdown: string): MarkdownChunk[] => {
+  const chunks: MarkdownChunk[] = []
   const current: string[] = []
+  let currentGap = 0
+
   const flush = () => {
-    const chunk = current.join('\n').trim()
-    if (chunk) chunks.push(chunk)
+    const text = current.join('\n').trim()
+    if (text) chunks.push({ text, gapBefore: currentGap })
     current.length = 0
+    currentGap = 0
   }
 
   markdown.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
     if (!line.trim()) {
-      flush()
+      if (current.length > 0) {
+        const text = current.join('\n').trim()
+        if (text) chunks.push({ text, gapBefore: currentGap })
+        current.length = 0
+        currentGap = 1
+      } else {
+        currentGap += 1
+      }
       return
     }
     if (/^#{1,6}\s+/.test(line.trim())) {
-      flush()
-      chunks.push(line.trim())
+      const text = current.join('\n').trim()
+      if (text) chunks.push({ text, gapBefore: currentGap })
+      current.length = 0
+      chunks.push({ text: line.trim(), gapBefore: currentGap })
+      currentGap = 0
       return
     }
     current.push(line)
   })
   flush()
   return chunks
+}
+
+export const splitMarkdownChunks = (markdown: string): string[] => {
+  return splitMarkdownChunksWithGaps(markdown).map((chunk) => chunk.text)
 }
 
 export const scoreTraceMatch = (markdown: string, sourceText: string) => {
@@ -86,7 +109,7 @@ export const traceExcerptForBlock = (
   chunks: string[],
   usedChunks: Set<number>,
   options: TraceExcerptOptions = {}
-) => {
+): { excerpt: string; score: number; chunkIndex: number } => {
   let bestIndex = -1
   let bestScore = 0
   chunks.forEach((chunk, index) => {
@@ -102,9 +125,9 @@ export const traceExcerptForBlock = (
     const excerpt = options.includeNearbyTable
       ? tableExcerptWithNearbyTable(chunk, bestIndex, chunks, usedChunks)
       : chunk
-    return { excerpt, score: bestScore }
+    return { excerpt, score: bestScore, chunkIndex: bestIndex }
   }
-  return { excerpt: block.text, score: 0 }
+  return { excerpt: block.text, score: 0, chunkIndex: -1 }
 }
 
 export const shouldRenderTraceExcerpt = (excerpt: string, seenExcerpts: Set<string>) => {

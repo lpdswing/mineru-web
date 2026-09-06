@@ -5,6 +5,8 @@ import re
 import zipfile
 from dataclasses import dataclass
 
+from app.utils.text_normalize import normalize_newlines
+
 
 @dataclass
 class SyncedArtifact:
@@ -38,7 +40,9 @@ class MineruArtifactSync:
                 content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
 
                 if name.endswith(".md"):
-                    markdown_content = content.decode("utf-8")
+                    # 换行符在上传前统一成 LF：{stem}.md 与 {stem}_pages.md 必须同构，
+                    # 否则后续行级 diff 会把每一行都判为不等，分页结构会被打乱。
+                    markdown_content = normalize_newlines(content.decode("utf-8"))
                     markdown_base_path = posixpath.dirname(target_path)
                     markdown_content = self._rewrite_markdown_urls(markdown_content, markdown_base_path)
                     content = markdown_content.encode("utf-8")

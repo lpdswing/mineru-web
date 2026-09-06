@@ -342,6 +342,7 @@
                       active: trace.block.id === activeSourceBlockId,
                       'no-source-pill': trace.block.type === 'page_number'
                     }"
+                    :style="trace.gapBefore > 1 ? { marginTop: `${(trace.gapBefore - 1) * 1.5}em` } : undefined"
                     :data-source-block-id="trace.block.id"
                     tabindex="0"
                     role="button"
@@ -463,13 +464,28 @@ import {
 import {
   normalizeTraceText,
   shouldRenderTraceExcerpt,
-  splitMarkdownChunks,
+  splitMarkdownChunksWithGaps,
   traceExcerptForBlock
 } from '@/utils/markdownTrace'
 import { sanitizeHtml, sanitizeHtmlCached } from '@/utils/sanitizeHtml'
 
 const route = useRoute()
-const md = MarkdownIt({ html: true, linkify: true, typographer: true }).use(mk)
+const md = MarkdownIt({ html: true, linkify: true, typographer: true, breaks: true }).use(mk)
+
+// 让编辑区看到的空行与预览渲染一致：
+// - breaks:true 已让「段落内单换行」渲染为 <br>；
+// - markdown-it 默认会把「连续空行」折叠成单个段落间距，这里把 2 个及以上的空行
+//   额外部分转成空段落（&nbsp;），使手动加的空行在预览里可见。
+// MinerU 原始解析结果只有单个空行（段落分隔），不含连续空行，故不受影响。
+function renderMarkdown(markdown: string): string {
+  if (!markdown) return ''
+  const preserved = markdown.replace(/\n{2,}/g, (run) => {
+    const blanks = run.length - 1 // 连续换行数 - 1 = 空行数
+    if (blanks <= 1) return run // 单个空行 = 正常段落分隔，保持原样
+    return '\n\n' + '&nbsp;\n\n'.repeat(blanks - 1)
+  })
+  return md.render(preserved)
+}
 
 interface FileItem {
   id: string
@@ -491,6 +507,7 @@ interface MarkdownTraceBlock {
   html: string
   index: number
   score: number
+  gapBefore: number
 }
 
 interface MarkdownTraceSection extends MarkdownPageSection {
@@ -803,7 +820,7 @@ const parseMarkdownPages = (content: string): MarkdownPageSection[] => {
       return {
         page,
         markdown,
-        html: sanitizeHtmlCached(md.render(markdown || ' '))
+        html: sanitizeHtmlCached(renderMarkdown(markdown || ' '))
       }
     })
     .filter((section) => Number.isFinite(section.page))
@@ -814,20 +831,23 @@ const showPageLinkedMarkdown = computed(() => {
 })
 const traceBlocksForSection = (section: MarkdownPageSection): MarkdownTraceBlock[] => {
   const blocks = filteredSourcePageFor(section.page)?.blocks || []
-  const chunks = splitMarkdownChunks(section.markdown)
+  const chunks = splitMarkdownChunksWithGaps(section.markdown)
+  const chunkTexts = chunks.map((chunk) => chunk.text)
   const usedChunks = new Set<number>()
   const seenExcerpts = new Set<string>()
   const traces: MarkdownTraceBlock[] = []
   blocks.forEach((block, index) => {
-    const trace = traceExcerptForBlock(block, chunks, usedChunks, {
+    const trace = traceExcerptForBlock(block, chunkTexts, usedChunks, {
       includeNearbyTable: sourceTypeFilterFor(block.type) === 'table'
     })
+    const gapBefore = trace.chunkIndex >= 0 ? (chunks[trace.chunkIndex]?.gapBefore ?? 0) : 0
     const traceBlock = {
       block,
       excerpt: trace.excerpt,
-      html: sanitizeHtmlCached(md.render(trace.excerpt || block.text || ' ')),
+      html: sanitizeHtmlCached(renderMarkdown(trace.excerpt || block.text || ' ')),
       index: index + 1,
-      score: trace.score
+      score: trace.score,
+      gapBefore
     }
     if (shouldRenderTraceExcerpt(traceBlock.excerpt, seenExcerpts)) {
       traces.push(traceBlock)
@@ -1222,9 +1242,9 @@ watch(currentFile, async (newFile) => {
   await reloadOriginPreview()
 })
 
-const renderedContent = computed(() => sanitizeHtmlCached(md.render(parsedContent.value || '')))
-const compareRenderedMarkdown = computed(() => sanitizeHtmlCached(md.render(compareMarkdownContent.value || '')))
-const compareRenderedPopo = computed(() => sanitizeHtmlCached(md.render(comparePopoContent.value || '')))
+const renderedContent = computed(() => sanitizeHtmlCached(renderMarkdown(parsedContent.value || '')))
+const compareRenderedMarkdown = computed(() => sanitizeHtmlCached(renderMarkdown(compareMarkdownContent.value || '')))
+const compareRenderedPopo = computed(() => sanitizeHtmlCached(renderMarkdown(comparePopoContent.value || '')))
 
 // ===== 识别结果 Markdown 手动编辑 / 历史版本 / 恢复 =====
 const editing = ref(false)
@@ -1246,8 +1266,8 @@ const canEdit = computed(() => {
   return markdownVariant.value === 'markdown' || markdownVariant.value === 'markdown_page'
 })
 
-const renderedEditPreview = computed(() => sanitizeHtml(md.render(editDraft.value || ' ')))
-const renderedViewingVersion = computed(() => sanitizeHtml(md.render(viewingVersion.value?.content || ' ')))
+const renderedEditPreview = computed(() => sanitizeHtml(renderMarkdown(editDraft.value || ' ')))
+const renderedViewingVersion = computed(() => sanitizeHtml(renderMarkdown(viewingVersion.value?.content || ' ')))
 
 const versionSourceNames: Record<string, string> = {
   parse: '解析结果',
