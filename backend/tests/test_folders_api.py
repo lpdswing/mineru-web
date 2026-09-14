@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine
@@ -54,7 +52,6 @@ def add_file(testing_session, user_id: str, filename: str) -> int:
             filename=filename,
             size=1024,
             status=FileStatus.PENDING,
-            upload_time=datetime.utcnow(),
             minio_path=filename,
         )
         db.add(db_file)

@@ -70,6 +70,7 @@
             <button
               class="toggle-btn"
               :class="{ active: viewMode === 'origin' }"
+              :disabled="editing"
               @click="setViewMode('origin')"
             >
               <el-icon><Document /></el-icon>
@@ -78,6 +79,7 @@
             <button 
               class="toggle-btn" 
               :class="{ active: viewMode === 'both' }"
+              :disabled="editing"
               @click="setViewMode('both')"
             >
               <el-icon><Document /></el-icon>
@@ -86,6 +88,7 @@
             <button 
               class="toggle-btn" 
               :class="{ active: viewMode === 'markdown' }"
+              :disabled="editing"
               @click="setViewMode('markdown')"
             >
               <el-icon><EditPen /></el-icon>
@@ -94,6 +97,23 @@
           </div>
         </div>
         <div class="header-right">
+          <template v-if="canEdit">
+            <el-button :loading="versionsLoading" :disabled="editing" @click="openVersionsDrawer">
+              <el-icon><Clock /></el-icon>
+              <span>Markdown 修改历史</span>
+            </el-button>
+            <el-button v-if="!editing" type="primary" plain @click="startEditing">
+              <el-icon><EditPen /></el-icon>
+              <span>编辑</span>
+            </el-button>
+            <template v-else>
+              <el-button type="primary" :loading="saving" @click="saveEdit">
+                <el-icon><Check /></el-icon>
+                <span>保存</span>
+              </el-button>
+              <el-button :disabled="saving" @click="cancelEditing">取消</el-button>
+            </template>
+          </template>
           <el-dropdown @command="handleExport">
             <el-button type="primary">
               <el-icon><Download /></el-icon>
@@ -171,7 +191,7 @@
           :class="{ 'full-width': viewMode === 'markdown' || markdownVariant === 'compare' || markdownVariant === 'popo_tree' }"
         >
           <div class="panel-content">
-            <div v-if="isPdf(currentFile?.filename)" class="pdf-review-bar">
+            <div v-if="isPdf(currentFile?.filename) && !editing" class="pdf-review-bar">
               <div class="pdf-review-title">
                 <span>{{ pdfReviewTitle }}</span>
                 <small>
@@ -204,7 +224,7 @@
                 </button>
               </div>
             </div>
-            <div v-else class="markdown-toolbar">
+            <div v-else-if="!editing" class="markdown-toolbar">
               <button
                 v-for="(name, variant) in markdownVariantNames"
                 :key="variant"
@@ -222,6 +242,36 @@
             <el-empty v-else-if="markdownLoadError" :description="markdownLoadError" :image-size="100">
               <el-button type="primary" @click="fetchParsedContent">重试</el-button>
             </el-empty>
+            <div v-else-if="editing" class="markdown-editor">
+              <div class="editor-pane">
+                <div class="editor-tabs">
+                  <button
+                    class="markdown-tab"
+                    :class="{ active: editPaneMode === 'edit' }"
+                    @click="editPaneMode = 'edit'"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    class="markdown-tab"
+                    :class="{ active: editPaneMode === 'preview' }"
+                    @click="editPaneMode = 'preview'"
+                  >
+                    预览
+                  </button>
+                </div>
+                <textarea
+                  v-show="editPaneMode === 'edit'"
+                  v-model="editDraft"
+                  class="editor-textarea"
+                  spellcheck="false"
+                  placeholder="编辑识别结果的 Markdown 内容..."
+                ></textarea>
+                <div v-show="editPaneMode === 'preview'" class="editor-preview">
+                  <div class="markdown-content" v-html="renderedEditPreview"></div>
+                </div>
+              </div>
+            </div>
             <div v-else-if="markdownVariant === 'compare'" class="markdown-compare">
               <section class="compare-column">
                 <div class="compare-header">
@@ -292,6 +342,7 @@
                       active: trace.block.id === activeSourceBlockId,
                       'no-source-pill': trace.block.type === 'page_number'
                     }"
+                    :style="trace.gapBefore > 1 ? { marginTop: `${(trace.gapBefore - 1) * 1.5}em` } : undefined"
                     :data-source-block-id="trace.block.id"
                     tabindex="0"
                     role="button"
@@ -318,16 +369,68 @@
         </div>
       </div>
     </main>
+
+    <!-- 历史版本抽屉 -->
+    <el-drawer
+      v-model="versionsDrawerOpen"
+      title="Markdown 修改历史"
+      size="480px"
+    >
+      <div v-loading="versionsLoading" class="versions-drawer-body">
+        <el-empty v-if="!versionsLoading && versionList.length === 0" description="暂无历史版本" :image-size="90" />
+        <div v-else class="version-list">
+          <div
+            v-for="v in versionList"
+            :key="v.id"
+            class="version-item"
+            :class="{ current: v.is_current }"
+          >
+            <div class="version-item-head">
+              <span class="version-no">v{{ v.version }}</span>
+              <el-tag size="small" :type="versionTagType(v.source)">{{ versionSourceNames[v.source] || v.source }}</el-tag>
+              <span v-if="v.is_current" class="version-current-tag">当前</span>
+              <span class="version-time">{{ formatVersionTime(v.created_at) }}</span>
+            </div>
+            <div v-if="v.note" class="version-note">{{ v.note }}</div>
+            <div class="version-item-actions">
+              <el-button
+                type="primary"
+                plain
+                size="small"
+                :icon="viewingVersion?.id === v.id ? ArrowUp : View"
+                @click="viewVersion(v)"
+              >
+                {{ viewingVersion?.id === v.id ? '收起' : '查看' }}
+              </el-button>
+              <el-button
+                type="warning"
+                plain
+                size="small"
+                :icon="RefreshLeft"
+                :disabled="v.is_current"
+                @click="restoreVersion(v)"
+              >
+                恢复
+              </el-button>
+            </div>
+            <div v-if="viewingVersion?.id === v.id" class="version-preview">
+              <div class="markdown-content" v-html="renderedViewingVersion"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   FolderOpened, Document, Search, Download, ArrowDown, 
-  EditPen, Expand, Fold, Loading 
+  EditPen, Expand, Fold, Loading, Clock, Check,
+  View, ArrowUp, RefreshLeft
 } from '@element-plus/icons-vue'
 import axios from 'axios'
 import MarkdownIt from 'markdown-it'
@@ -347,7 +450,9 @@ import {
   type PopoStatusValue,
   type PopoTreeNode,
   type SourceBlock,
-  type SourceMap
+  type SourceMap,
+  type ParsedContentVersion,
+  type ParsedContentVersionDetail
 } from '@/types/file'
 import {
   SOURCE_TYPE_FILTER_OPTIONS,
@@ -359,12 +464,28 @@ import {
 import {
   normalizeTraceText,
   shouldRenderTraceExcerpt,
-  splitMarkdownChunks,
+  splitMarkdownChunksWithGaps,
   traceExcerptForBlock
 } from '@/utils/markdownTrace'
+import { sanitizeHtml, sanitizeHtmlCached } from '@/utils/sanitizeHtml'
 
 const route = useRoute()
-const md = MarkdownIt({ html: true, linkify: true, typographer: true }).use(mk)
+const md = MarkdownIt({ html: true, linkify: true, typographer: true, breaks: true }).use(mk)
+
+// 让编辑区看到的空行与预览渲染一致：
+// - breaks:true 已让「段落内单换行」渲染为 <br>；
+// - markdown-it 默认会把「连续空行」折叠成单个段落间距，这里把 2 个及以上的空行
+//   额外部分转成空段落（&nbsp;），使手动加的空行在预览里可见。
+// MinerU 原始解析结果只有单个空行（段落分隔），不含连续空行，故不受影响。
+function renderMarkdown(markdown: string): string {
+  if (!markdown) return ''
+  const preserved = markdown.replace(/\n{2,}/g, (run) => {
+    const blanks = run.length - 1 // 连续换行数 - 1 = 空行数
+    if (blanks <= 1) return run // 单个空行 = 正常段落分隔，保持原样
+    return '\n\n' + '&nbsp;\n\n'.repeat(blanks - 1)
+  })
+  return md.render(preserved)
+}
 
 interface FileItem {
   id: string
@@ -386,6 +507,7 @@ interface MarkdownTraceBlock {
   html: string
   index: number
   score: number
+  gapBefore: number
 }
 
 interface MarkdownTraceSection extends MarkdownPageSection {
@@ -495,7 +617,28 @@ onMounted(async () => {
 
 const filteredFiles = computed(() => allFiles.value)
 
-const selectFile = (file: FileItem) => {
+/** 编辑内容是否已发生未保存的变更 */
+const hasUnsavedEdit = () =>
+  editing.value && editDraft.value.trim() !== (parsedContent.value || '').trim()
+
+/** 未保存变更确认；返回 false 表示用户选择留在当前上下文 */
+const confirmDiscardEdit = async (what: string) => {
+  try {
+    await ElMessageBox.confirm(
+      `当前有未保存的编辑内容，${what}会丢弃这些修改。是否继续？`,
+      '未保存的编辑',
+      { type: 'warning', confirmButtonText: '放弃修改并继续', cancelButtonText: '留在当前文件' }
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+const selectFile = async (file: FileItem) => {
+  if (currentFile.value && file.id === currentFile.value.id) return
+  if (hasUnsavedEdit() && !(await confirmDiscardEdit('切换文件'))) return
+
   currentFile.value = file
   page.value = 1
   markdownVariant.value = preferredMarkdownVariant(file)
@@ -511,6 +654,12 @@ const selectFile = (file: FileItem) => {
   activeSourcePage.value = 1
   activeSourceBlockId.value = ''
   currentPdfPage.value = 1
+  editing.value = false
+  editDraft.value = ''
+  editPaneMode.value = 'edit'
+  versionsDrawerOpen.value = false
+  viewingVersion.value = null
+  versionList.value = []
   if (viewMode.value !== 'origin') {
     fetchParsedContent()
   }
@@ -551,7 +700,8 @@ const markdownVariantNames: Record<MarkdownViewVariant, string> = {
   popo_tree: '结构树',
   compare: '对比'
 }
-const pdfMarkdownVariantNames: Record<'markdown_page' | 'popo_tree' | 'compare', string> = {
+const pdfMarkdownVariantNames: Record<'markdown' | 'markdown_page' | 'popo_tree' | 'compare', string> = {
+  markdown: 'Markdown',
   markdown_page: '溯源阅读',
   popo_tree: '结构树',
   compare: 'OCR-Popo 对照'
@@ -670,7 +820,7 @@ const parseMarkdownPages = (content: string): MarkdownPageSection[] => {
       return {
         page,
         markdown,
-        html: md.render(markdown || ' ')
+        html: sanitizeHtmlCached(renderMarkdown(markdown || ' '))
       }
     })
     .filter((section) => Number.isFinite(section.page))
@@ -681,20 +831,23 @@ const showPageLinkedMarkdown = computed(() => {
 })
 const traceBlocksForSection = (section: MarkdownPageSection): MarkdownTraceBlock[] => {
   const blocks = filteredSourcePageFor(section.page)?.blocks || []
-  const chunks = splitMarkdownChunks(section.markdown)
+  const chunks = splitMarkdownChunksWithGaps(section.markdown)
+  const chunkTexts = chunks.map((chunk) => chunk.text)
   const usedChunks = new Set<number>()
   const seenExcerpts = new Set<string>()
   const traces: MarkdownTraceBlock[] = []
   blocks.forEach((block, index) => {
-    const trace = traceExcerptForBlock(block, chunks, usedChunks, {
+    const trace = traceExcerptForBlock(block, chunkTexts, usedChunks, {
       includeNearbyTable: sourceTypeFilterFor(block.type) === 'table'
     })
+    const gapBefore = trace.chunkIndex >= 0 ? (chunks[trace.chunkIndex]?.gapBefore ?? 0) : 0
     const traceBlock = {
       block,
       excerpt: trace.excerpt,
-      html: md.render(trace.excerpt || block.text || ' '),
+      html: sanitizeHtmlCached(renderMarkdown(trace.excerpt || block.text || ' ')),
       index: index + 1,
-      score: trace.score
+      score: trace.score,
+      gapBefore
     }
     if (shouldRenderTraceExcerpt(traceBlock.excerpt, seenExcerpts)) {
       traces.push(traceBlock)
@@ -921,6 +1074,9 @@ const fetchCompareContent = async () => {
 
 const handleMarkdownVariant = async (variant: MarkdownViewVariant) => {
   if (markdownVariant.value === variant) return
+  if (hasUnsavedEdit() && !(await confirmDiscardEdit('切换视图'))) return
+  editing.value = false
+  editDraft.value = ''
   markdownVariant.value = variant
   await fetchParsedContent()
 }
@@ -1026,12 +1182,14 @@ const previewOfficeFile = async () => {
     if (isWord(currentFile.value.filename)) {
       const arrayBuffer = await blob.arrayBuffer()
       const result = await mammoth.convertToHtml({ arrayBuffer })
-      officeContent.value = result.value
+      // docx 可携带 javascript: 超链接等，mammoth 会原样转出 HTML，必须净化
+      officeContent.value = sanitizeHtml(result.value)
     } else if (isExcel(currentFile.value.filename)) {
       const arrayBuffer = await blob.arrayBuffer()
       const workbook = XLSX.read(arrayBuffer, { type: 'array' })
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-      officeContent.value = XLSX.utils.sheet_to_html(firstSheet)
+      // sheet_to_html 直接拼接单元格文本且不转义，单元格里放 HTML 会被执行
+      officeContent.value = sanitizeHtml(XLSX.utils.sheet_to_html(firstSheet))
     }
   } catch (e) {
     originLoadError.value = '预览 Office 文件失败，可下载原文件后查看'
@@ -1084,9 +1242,182 @@ watch(currentFile, async (newFile) => {
   await reloadOriginPreview()
 })
 
-const renderedContent = computed(() => md.render(parsedContent.value || ''))
-const compareRenderedMarkdown = computed(() => md.render(compareMarkdownContent.value || ''))
-const compareRenderedPopo = computed(() => md.render(comparePopoContent.value || ''))
+const renderedContent = computed(() => sanitizeHtmlCached(renderMarkdown(parsedContent.value || '')))
+const compareRenderedMarkdown = computed(() => sanitizeHtmlCached(renderMarkdown(compareMarkdownContent.value || '')))
+const compareRenderedPopo = computed(() => sanitizeHtmlCached(renderMarkdown(comparePopoContent.value || '')))
+
+// ===== 识别结果 Markdown 手动编辑 / 历史版本 / 恢复 =====
+const editing = ref(false)
+const editDraft = ref('')
+const editPaneMode = ref<'edit' | 'preview'>('edit')
+const saving = ref(false)
+const viewModeBeforeEdit = ref<'both' | 'origin' | 'markdown'>('both')
+const markdownVariantBeforeEdit = ref<MarkdownViewVariant>('markdown')
+const versionsDrawerOpen = ref(false)
+const versionsLoading = ref(false)
+const versionList = ref<ParsedContentVersion[]>([])
+const viewingVersion = ref<ParsedContentVersionDetail | null>(null)
+
+const canEdit = computed(() => {
+  if (!currentFile.value || currentFile.value.status !== 'parsed') return false
+  // 普通视图与按页溯源视图都显示编辑入口；真正编辑的对象始终是普通 Markdown
+  // （见 startEditing：按页视图下点编辑会先切回 markdown 变体取内容），
+  // 避免「# Page N」的页级内容被存进 DB 污染普通 Markdown
+  return markdownVariant.value === 'markdown' || markdownVariant.value === 'markdown_page'
+})
+
+const renderedEditPreview = computed(() => sanitizeHtml(renderMarkdown(editDraft.value || ' ')))
+const renderedViewingVersion = computed(() => sanitizeHtml(renderMarkdown(viewingVersion.value?.content || ' ')))
+
+const versionSourceNames: Record<string, string> = {
+  parse: '解析结果',
+  save: '手动保存',
+  restore: '恢复'
+}
+
+const versionTagType = (source: string): 'info' | 'success' | 'warning' => {
+  if (source === 'save') return 'success'
+  if (source === 'restore') return 'warning'
+  return 'info'
+}
+
+const formatVersionTime = (iso: string) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const startEditing = async () => {
+  // 无论当前在哪个视图模式，进入编辑都强制切换为「左原文件 + 右 Markdown」对照布局
+  viewModeBeforeEdit.value = viewMode.value
+  markdownVariantBeforeEdit.value = markdownVariant.value
+  viewMode.value = 'both'
+  // 编辑对象始终是普通 Markdown（DB 里的 parsed_contents.content）：
+  // 若当前停留在按页溯源视图，先切回 markdown 变体重新加载内容再进编辑，
+  // 否则会把带「# Page N」的页级内容当成编辑起点，保存时污染普通 Markdown
+  if (markdownVariant.value !== 'markdown') {
+    markdownVariant.value = 'markdown'
+    await fetchParsedContent()
+  }
+  editDraft.value = parsedContent.value || ''
+  editPaneMode.value = 'edit'
+  editing.value = true
+  if (!fileUrl.value && currentFile.value) {
+    await reloadOriginPreview()
+  }
+}
+
+/** 取消编辑后恢复编辑前的 Markdown 变体；变体变化时需重新拉取对应视图内容 */
+const restoreVariantAfterEdit = () => {
+  const target = markdownVariantBeforeEdit.value
+  if (markdownVariant.value !== target) {
+    markdownVariant.value = target
+    void fetchParsedContent()
+  }
+}
+
+const cancelEditing = () => {
+  editing.value = false
+  editDraft.value = ''
+  viewMode.value = viewModeBeforeEdit.value
+  restoreVariantAfterEdit()
+}
+
+const saveEdit = async () => {
+  if (!currentFile.value) return
+  saving.value = true
+  try {
+    const res = await filesApi.saveParsedContent(currentFile.value.id, editDraft.value)
+    // 数据库已提交，无论对象存储是否同步成功都要同步本地内容
+    // 保存对象是普通 Markdown；成功后停留在该变体，确保立即显示刚保存的内容
+    editing.value = false
+    viewMode.value = viewModeBeforeEdit.value
+    if (res.changed) {
+      parsedContent.value = editDraft.value
+    }
+    if (res.synced === false) {
+      const prefix = res.changed ? `已保存为 v${res.version}` : '内容未变化，未生成新版本'
+      ElMessage.warning(`${prefix}，但同步对象存储失败：${res.sync_error || '未知错误'}`)
+    } else if (res.changed) {
+      ElMessage.success(`已保存为 v${res.version}`)
+    } else {
+      ElMessage.info('内容未变化，未生成新版本')
+    }
+  } catch {
+    // 4xx/5xx 已由 api/index.ts 响应拦截器统一弹出后端 detail，此处不重复提示
+  } finally {
+    saving.value = false
+  }
+}
+
+const refreshVersions = async () => {
+  if (!currentFile.value) return
+  // 不再吞异常：请求失败时交由调用方处理，避免「真空列表」与「请求失败」不可区分
+  versionList.value = (await filesApi.getParsedContentVersions(currentFile.value.id)) || []
+}
+
+const openVersionsDrawer = async () => {
+  if (!currentFile.value) return
+  // 编辑态下禁止查看/恢复历史，避免恢复结果与未保存草稿（editDraft）不一致
+  if (editing.value) return
+  versionsDrawerOpen.value = true
+  versionsLoading.value = true
+  viewingVersion.value = null
+  try {
+    await refreshVersions()
+  } catch {
+    // 错误提示已由 api/index.ts 拦截器弹出，这里只负责不展示一个空的抽屉
+    versionsDrawerOpen.value = false
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+const viewVersion = async (v: ParsedContentVersion) => {
+  if (!currentFile.value) return
+  if (viewingVersion.value?.id === v.id) {
+    viewingVersion.value = null
+    return
+  }
+  try {
+    const detail = await filesApi.getParsedContentVersion(currentFile.value.id, v.id)
+    viewingVersion.value = detail
+  } catch {
+    // 错误提示已由 api/index.ts 拦截器弹出
+  }
+}
+
+const restoreVersion = async (v: ParsedContentVersion) => {
+  if (!currentFile.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将恢复到 v${v.version}（${formatVersionTime(v.created_at)}）。恢复动作会新增一条内容为 v${v.version} 的版本记录；被覆盖的当前内容仍保留在其原有版本中，可通过再次恢复来撤销。`,
+      '确认恢复',
+      { type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+  try {
+    const res = await filesApi.restoreParsedContentVersion(currentFile.value.id, v.id)
+    if (res.restored) {
+      if (res.synced === false) {
+        ElMessage.warning(`已恢复为 v${v.version}（新版本 v${res.version}），但同步对象存储失败：${res.sync_error || '未知错误'}`)
+      } else {
+        ElMessage.success(`已恢复为 v${v.version}（当前为新版本 v${res.version}）`)
+      }
+    } else {
+      ElMessage.info('目标版本与当前内容一致')
+    }
+    viewingVersion.value = null
+    await refreshVersions()
+    await fetchParsedContent()
+  } catch {
+    // 同 saveEdit：4xx/5xx 已由拦截器统一提示
+  }
+}
 </script>
 
 <style scoped>
@@ -1201,6 +1532,16 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   gap: 16px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-right .el-button + .el-button {
+  margin-left: 0 !important;
+}
+
 .header-left {
   flex: 1;
   min-width: 0;
@@ -1243,6 +1584,11 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   background: var(--bg-primary);
   color: var(--primary-color);
   box-shadow: var(--shadow-sm);
+}
+
+.toggle-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* 预览内容 */
@@ -1842,6 +2188,131 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   display: none !important;
 }
 
+/* 手动编辑 / 历史版本 */
+.markdown-editor {
+  display: flex;
+  height: 100%;
+  min-height: 420px;
+}
+
+.editor-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.editor-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.editor-tabs .markdown-tab {
+  min-width: 64px;
+  height: 28px;
+}
+
+.editor-textarea {
+  flex: 1;
+  width: 100%;
+  height: auto;
+  padding: 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.editor-preview {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.versions-drawer-body {
+  min-height: 200px;
+}
+
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.version-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.version-item.current {
+  border-color: color-mix(in srgb, var(--primary-color) 40%, var(--border-light));
+}
+
+.version-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-no {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.version-current-tag {
+  height: 18px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--primary-tint);
+  color: var(--primary-color);
+  font-size: 11px;
+}
+
+.version-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.version-note {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.version-item-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.version-preview {
+  margin-top: 10px;
+  padding-top: 10px;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px dashed var(--border-light);
+}
+
 @media (max-width: 1024px) {
   .preview-content {
     flex-direction: column;
@@ -1899,6 +2370,15 @@ const compareRenderedPopo = computed(() => md.render(comparePopoContent.value ||
   
   .panel-content {
     padding: 16px;
+  }
+
+  .markdown-editor {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .editor-pane {
+    min-height: 300px;
   }
 }
 </style>

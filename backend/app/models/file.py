@@ -1,8 +1,9 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.models.base import Base
 from app.models.enums import FileStatus, DEFAULT_MINERU_BACKEND, normalize_backend_value
-from datetime import datetime
 
 class File(Base):
     __tablename__ = 'files'
@@ -13,7 +14,12 @@ class File(Base):
     filename = Column(String(256), nullable=False, index=True)  # 添加索引用于搜索
     size = Column(Integer, nullable=False)
     status = Column(Enum(FileStatus, name='filestatus'), default=FileStatus.PENDING, index=True)  # 添加索引用于过滤
-    upload_time = Column(DateTime, default=datetime.utcnow, index=True)  # 添加索引用于排序
+    upload_time = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),  # ORM 插入时由 Python 填值（DB 层曾缺 DEFAULT，见迁移 20260617）
+        server_default=func.now(),
+        index=True,
+    )  # 添加索引用于排序
     minio_path = Column(String(512), nullable=False)
     content_type = Column(String(64), nullable=True)
     version = Column(String(32), nullable=True)

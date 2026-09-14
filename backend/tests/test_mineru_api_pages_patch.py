@@ -22,7 +22,9 @@ def test_pages_patch_appends_generated_page_markdown(monkeypatch, tmp_path):
     parse_dir = tmp_path / "sample" / "auto"
     parse_dir.mkdir(parents=True)
     pages_path = parse_dir / "sample_pages.md"
-    pages_path.write_text("# Page 1\n\nBody", encoding="utf-8")
+    # 必须用 write_bytes：Windows 上 write_text 会把 \n 转成 \r\n，
+    # 而这里断言的是写入 zip 的原始字节，需要字节级精确。
+    pages_path.write_bytes(b"# Page 1\n\nBody")
 
     zip_path = tmp_path / "result.zip"
 

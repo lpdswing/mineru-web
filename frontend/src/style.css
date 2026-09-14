@@ -295,6 +295,71 @@ body {
   transform: translateY(0);
 }
 
+/* plain 按钮修复：恢复浅色底 + 主色文字（避免被上面的渐变背景覆盖成蓝底蓝字） */
+.el-button--primary.is-plain {
+  background: var(--bg-primary) !important;
+  border: 1px solid var(--el-color-primary-light-5) !important;
+  color: var(--el-color-primary);
+  box-shadow: none;
+}
+
+.el-button--primary.is-plain:hover {
+  background: var(--primary-tint) !important;
+  border-color: var(--el-color-primary) !important;
+  color: var(--el-color-primary);
+}
+
+.el-button--primary.is-plain:active {
+  background: var(--primary-faint) !important;
+  transform: translateY(0);
+}
+
+/* link 按钮修复：保持透明底 + 主色文字（避免被渐变背景覆盖成蓝底蓝字） */
+.el-button--primary.is-link {
+  background: transparent !important;
+  border: none !important;
+  color: var(--el-color-primary);
+  box-shadow: none;
+}
+
+.el-button--primary.is-link:hover {
+  background: var(--primary-tint) !important;
+  color: var(--el-color-primary);
+}
+
+.el-button--primary.is-link:active {
+  background: var(--primary-faint) !important;
+  transform: translateY(0);
+}
+
+/* warning plain 按钮修复：白底 + 橙字 + 橙边 */
+.el-button--warning.is-plain {
+  background: var(--bg-primary) !important;
+  border: 1px solid var(--el-color-warning-light-5) !important;
+  color: var(--el-color-warning);
+  box-shadow: none;
+}
+
+.el-button--warning.is-plain:hover {
+  background: var(--warning-tint) !important;
+  border-color: var(--el-color-warning) !important;
+  color: var(--el-color-warning);
+}
+
+/* danger plain 按钮修复：白底 + 红字 + 红边 */
+.el-button--danger.is-plain {
+  background: var(--bg-primary) !important;
+  border: 1px solid var(--el-color-danger-light-5) !important;
+  color: var(--el-color-danger);
+  box-shadow: none;
+}
+
+.el-button--danger.is-plain:hover {
+  background: var(--danger-tint) !important;
+  border-color: var(--el-color-danger) !important;
+  color: var(--el-color-danger);
+}
+
 .el-button--success {
   background: linear-gradient(180deg, var(--success-color) 0%, var(--success-dark) 100%) !important;
   box-shadow: 0 2px 8px rgb(52 199 89 / 0.24);
@@ -461,6 +526,10 @@ body {
 
 .el-pagination .el-pager li.is-active {
   background: var(--primary-gradient) !important;
+  /* Element Plus 的激活页码文字色取 --el-pagination-hover-color（上面已被设为主色），
+     若不强制白色，会形成「蓝底蓝字」，页码数字不可见 */
+  color: #fff !important;
+  font-weight: 600;
 }
 
 /* 上传组件样式优化 */

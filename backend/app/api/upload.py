@@ -1,7 +1,6 @@
 import traceback
 import os
 import uuid
-from datetime import datetime
 from typing import List
 from fastapi import APIRouter, UploadFile, File, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
@@ -55,7 +54,6 @@ async def upload_files(
                 filename=file.filename,
                 size=file.size,
                 status=FileStatus.PENDING,
-                upload_time=datetime.utcnow(),
                 minio_path=unique_filename,
                 content_type=file.content_type,
                 backend=backend,

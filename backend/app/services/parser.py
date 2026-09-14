@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ from app.services.mineru_api import MineruApiClient
 from app.services.popo import PopoPostprocessor
 from app.utils.minio_client import MINIO_BUCKET, minio_client
 from app.utils.redis_client import redis_client
+from app.utils.text_normalize import normalize_newlines
 
 PDF_EXTENSIONS = [".pdf"]
 IMAGE_EXTENSIONS = [".png", ".jpeg", ".jp2", ".webp", ".gif", ".bmp", ".jpg", ".tiff"]
@@ -127,7 +128,7 @@ class ParserService:
                 progress = max(current, progress)
             file.progress_percent = progress
         file.progress_message = message[:255]
-        file.last_heartbeat_at = datetime.now()
+        file.last_heartbeat_at = datetime.now(timezone.utc)
         if clear_mineru_task:
             file.mineru_task_id = None
             file.mineru_task_status = None
@@ -247,7 +248,7 @@ class ParserService:
 
             backend = settings.get("backend", "pipeline")
             file.error_message = None
-            file.start_at = datetime.now()
+            file.start_at = datetime.now(timezone.utc)
             self._update_progress(
                 file,
                 "fetching_source",
@@ -284,15 +285,21 @@ class ParserService:
                 mineru_progress_callback=lambda event: self._record_mineru_task_progress(file, event),
             )
 
+            # 写识别结果前锁 files 行，与「编辑保存」串行化（后者同样先锁 files 行）。
+            # PG 下行锁生效、后到者等待；SQLite 静默忽略，靠整库写锁兜底。
+            # 锁放在解析完成后、写 ParsedContent 之前的短事务里，不覆盖长解析过程。
+            self.db.query(FileModel.id).filter(FileModel.id == file.id).with_for_update().first()
+
             parsed_content = ParsedContent(
                 user_id=user_id,
                 file_id=file.id,
-                content=md_content_list[0],
+                # 换行符统一成 LF，与 MinIO 里的 {stem}.md 保持同构
+                content=normalize_newlines(md_content_list[0]),
             )
             self.db.add(parsed_content)
 
             file.error_message = None
-            file.finish_at = datetime.now()
+            file.finish_at = datetime.now(timezone.utc)
             self._update_progress(
                 file,
                 "completed",

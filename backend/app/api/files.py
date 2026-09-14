@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.file import File as FileModel
 from app.models.folder import Folder
 from app.models.parsed_content import ParsedContent
+from app.models.parsed_content_version import ParsedContentVersion
 from app.utils.minio_client import minio_client, MINIO_BUCKET
 from app.utils.user_dep import get_user_id
 
@@ -215,11 +216,18 @@ def delete_file(
     minio_path = file.minio_path
 
     try:
+        # 删除编辑历史版本（必须先于 files 行删除）
+        # 仅按 file_id 过滤：版本行的 user_id 与 files 一致，但按 file_id 兜底更稳，
+        # 避免历史脏数据导致残留孤儿行进而触发外键约束。
+        db.query(ParsedContentVersion).filter(
+            ParsedContentVersion.file_id == file_id
+        ).delete(synchronize_session=False)
+
         # 删除解析内容
         db.query(ParsedContent).filter(
             ParsedContent.file_id == file_id,
             ParsedContent.user_id == user_id
-        ).delete()
+        ).delete(synchronize_session=False)
 
         # 删除文件记录
         db.delete(file)

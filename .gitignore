@@ -62,3 +62,6 @@ output/
 graphify-out/
 .codex/
 .superpowers/
+.workbuddy/
+# 本地一次性数据修复脚本与备份（含真实文档内容，不进版本库）
+backend/scripts/

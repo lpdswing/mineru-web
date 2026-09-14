@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.models.file import File as FileModel
 from app.models.parsed_content import ParsedContent
+from app.models.parsed_content_version import ParsedContentVersion
 from main import app
 
 
@@ -44,7 +45,7 @@ class FakeQuery:
     def first(self):
         return self.item
 
-    def delete(self):
+    def delete(self, synchronize_session=None):
         if self.delete_callback:
             self.delete_callback()
         return 1
@@ -55,6 +56,7 @@ class FakeDb:
         self.file = file
         self.commit_error = commit_error
         self.parsed_deletes = 0
+        self.version_deletes = 0
         self.deleted_files = []
         self.committed = False
         self.rolled_back = False
@@ -64,10 +66,15 @@ class FakeDb:
             return FakeQuery(self.file)
         if model is ParsedContent:
             return FakeQuery(delete_callback=self._delete_parsed_content)
+        if model is ParsedContentVersion:
+            return FakeQuery(delete_callback=self._delete_parsed_content_versions)
         return FakeQuery()
 
     def _delete_parsed_content(self):
         self.parsed_deletes += 1
+
+    def _delete_parsed_content_versions(self):
+        self.version_deletes += 1
 
     def delete(self, file):
         self.deleted_files.append(file)
@@ -127,6 +134,8 @@ def test_delete_file_removes_original_and_parsed_minio_artifacts(monkeypatch):
         ("mds", "sample/images/page-1.png"),
     ]
     assert fake_db.parsed_deletes == 1
+    # 编辑历史版本必须先于 files 行删除，否则外键会拒绝删除
+    assert fake_db.version_deletes == 1
     assert fake_db.deleted_files == [fake_file]
     assert fake_db.committed is True
     assert fake_db.rolled_back is False
